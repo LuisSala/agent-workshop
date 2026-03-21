@@ -1,0 +1,23 @@
+{
+    "mcpServers": {
+        "cloudrun": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@google-cloud/cloud-run-mcp"
+            ],
+            "env": {}
+        },
+        "deepwiki": {
+            "serverUrl": "https://mcp.deepwiki.com/mcp"
+        },
+        "chrome-devtools": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "chrome-devtools-mcp@latest",
+                "--autoConnect"
+            ]
+        }
+    }
+}
