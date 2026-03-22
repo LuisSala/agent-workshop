@@ -44,26 +44,6 @@
                 <div class="feed-col" id="article-grid">
                     <!-- Cards are dynamically injected here -->
                 </div>
-                <aside class="sidebar-col">
-                    <div class="widget market-widget">
-                        <h3>Market Outlook</h3>
-                        <div class="market-list">
-                            <div class="market-item"><span>S&P Futures</span> <span class="down">↓ 1.52%</span></div>
-                            <div class="market-item"><span>NASDAQ Fut.</span> <span class="down">↓ 1.95%</span></div>
-                            <div class="market-item"><span>Bitcoin</span> <span class="up">↑ 0.79%</span></div>
-                            <div class="market-item"><span>VIX</span> <span class="up">↑ 11.31%</span></div>
-                        </div>
-                    </div>
-                    <div class="widget trending-widget">
-                        <h3>Trending Companies</h3>
-                        <div class="trending-list">
-                            <div class="trend-item"><div class="square msft"></div>Microsoft Corporation</div>
-                            <div class="trend-item"><div class="square nvda"></div>NVIDIA Corporation</div>
-                            <div class="trend-item"><div class="square mrvi"></div>Marvell Technology</div>
-                            <div class="trend-item"><div class="square oai"></div>OpenAI</div>
-                        </div>
-                    </div>
-                </aside>
             </main>
         </div>
     </div>
@@ -78,9 +58,12 @@
                 <span id="modal-sources"></span>
             </div>
             <div id="modal-body"></div>
+            <div id="modal-citations"></div>
         </div>
     </div>
 
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
 </html>

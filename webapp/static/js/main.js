@@ -87,14 +87,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const timeAgo = Math.floor(Math.random() * 8) + 1; // Fake time for aesthetic
             
             const card = document.createElement("div");
-            // Make first article the Hero
-            card.className = idx === 0 ? "article-card card-hero" : "article-card";
+            // Alternating layout: 1 Hero, 4 normal cards...
+            card.className = (idx % 5 === 0) ? "article-card card-hero" : "article-card";
             
             card.innerHTML = `
                 <img src="${imgUrl}" class="card-img" alt="Cover">
                 <div class="card-content">
                     <h2>${article.title}</h2>
-                    <p>${article.teaser}</p>
+                    <div class="teaser-text">${marked.parse(article.teaser)}</div>
                 </div>
                 <div class="card-meta">
                     <div class="source-pill">✦</div>
@@ -112,7 +112,13 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-img").src = imgUrl;
         document.getElementById("modal-title").innerText = article.title;
         document.getElementById("modal-sources").innerText = `✦ SYNTHESIZED FROM ${sourceCount} SOURCES IN REAL-TIME`;
-        document.getElementById("modal-body").innerText = article.content;
+        document.getElementById("modal-body").innerHTML = marked.parse(article.content);
+        
+        const citationsHtml = (article.citations && article.citations.length > 0) 
+            ? "<h3>Sources</h3><ul>" + article.citations.map(c => `<li><a href="${c.url}" target="_blank">${c.title}</a></li>`).join("") + "</ul>"
+            : "";
+        document.getElementById("modal-citations").innerHTML = citationsHtml;
+        
         modal.style.display = "block";
     }
 

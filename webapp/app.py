@@ -46,7 +46,9 @@ def run_agent_in_thread(query: str, session_id: str, q: queue.Queue):
                     q.put({"type": "event", "author": event.author, "text": text, "tool": function_call})
 
             # Finished processing, get final state
-            session = await session_service.get_session(session_id)
+            session = await session_service.get_session(
+                app_name="newsroom_ui", user_id="demo_user", session_id=session_id
+            )
             compiled = session.state.get("compiled_news", {})
             
             # Extract JSON from Pydantic model
