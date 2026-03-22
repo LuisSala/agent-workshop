@@ -44,13 +44,10 @@ class Citation(BaseModel):
     title: str = Field(description="Title of the source")
     url: str = Field(description="URL of the source")
 
-class SearchResult(BaseModel):
-    content: str = Field(description="The factual content found")
-
 class Article(BaseModel):
     title: str = Field(description="Catchy headline")
-    teaser: str = Field(description="Short engaging teaser")
-    content: str = Field(description="Full article content")
+    teaser: str = Field(description="Short engaging teaser in markdown format")
+    content: str = Field(description="Full article content in markdown format")
     citations: list[Citation] = Field(description="Sources used in this article")
 
 class NewspaperPage(BaseModel):
@@ -58,9 +55,9 @@ class NewspaperPage(BaseModel):
         description="Collection of articles for the front page"
     )
 
-class SearchPlan(BaseModel):
-    queries: list[str] = Field(
-        description="A list of at least 5 very specific Google Search queries to research."
+class TopicPlan(BaseModel):
+    topics: list[str] = Field(
+        description="A list of specific beats or topics to investigate."
     )
 ```
 </details>
@@ -94,12 +91,13 @@ def make_citations_callback(agent_name: str, output_key: str):
                         citations.append({"title": getattr(chunk.web, "title", "No Title"), "url": chunk.web.uri})
                 break  
 
-        if (
-            output_key
-            and output_key in callback_context.state
-            and isinstance(callback_context.state[output_key], dict)
-        ):
-            callback_context.state[output_key]["citations"] = citations
+        if output_key and output_key in callback_context.state:
+            state_val = callback_context.state[output_key]
+            # Override hallucinated LLM citations with authentic Vertex URLs
+            if hasattr(state_val, "citations"):
+                state_val.citations = [Citation(**c) for c in citations]
+            elif isinstance(state_val, dict):
+                state_val["citations"] = citations
 
     return extract_citations_callback
 ```
@@ -118,18 +116,19 @@ from google.adk.tools import google_search
 
 def create_research_agent(topic: str, index: int) -> Agent:
     agent_name = f"researcher_{index}"
-    out_key = f"search_result_{index}"
+    out_key = f"article_{index}"
     return Agent(
         name=agent_name,
         model=worker_model,
         instruction=f"""
         The current date and time is: {{get_current_server_time()}}
         
-        Research the following topic: {topic}. 
-        Return highly detailed factual content from your tools. Do not include URLs or citations in your text output.
+        You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
+        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `Article` schema.
+        Use `google_search` to gather factual information.
         """,
         tools=[google_search],
-        output_schema=SearchResult,
+        output_schema=Article,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -138,12 +137,12 @@ class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("search_plan")
-        if not plan or not plan.get("queries"):
+        plan = ctx.session.state.get("topic_plan")
+        if not plan or not plan.get("topics"):
             return
 
         researchers = [
-            create_research_agent(query, i) for i, query in enumerate(plan["queries"])
+            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
         ]
 
         parallel_runner = ParallelAgent(
@@ -224,7 +223,7 @@ if __name__ == "__main__":
 ## Your Objectives
 
 ### 1. Build the Editor-in-Chief (Planner Agent)
-Now that you have the supporting pieces, define `planner_agent` to take a broad user query and configure the `SearchPlan` schema! Guarantee it outputs to `output_key="search_plan"`. 
+Now that you have the supporting pieces, define `planner_agent` to take a broad user query and configure the `TopicPlan` schema! Guarantee it outputs to `output_key="topic_plan"`. 
 
 ### 2. Build the Compiler 
 Create the `compiler_agent`. Make sure it reads the results produced by the `research_team` and outputs to the `NewspaperPage` schema using `output_key="compiled_news"`. 

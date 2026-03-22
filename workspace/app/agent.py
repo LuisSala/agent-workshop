@@ -51,9 +51,9 @@ class NewspaperPage(BaseModel):
     )
 
 
-class SearchPlan(BaseModel):
-    queries: list[str] = Field(
-        description="A list of very specific Google Search queries to research."
+class TopicPlan(BaseModel):
+    topics: list[str] = Field(
+        description="A list of specific beats or topics to investigate."
     )
 
 
@@ -101,12 +101,13 @@ def make_citations_callback(agent_name: str, output_key: str):
                 break  # Only process the final response
 
         # Inject the deterministic citations into the structured state!
-        if (
-            output_key
-            and output_key in callback_context.state
-            and isinstance(callback_context.state[output_key], dict)
-        ):
-            callback_context.state[output_key]["citations"] = citations
+        if output_key and output_key in callback_context.state:
+            state_val = callback_context.state[output_key]
+            # Replace hallucinated citations with the true grounding URLs
+            if hasattr(state_val, "citations"):
+                state_val.citations = [Citation(**c) for c in citations]
+            elif isinstance(state_val, dict):
+                state_val["citations"] = citations
 
     return extract_citations_callback
 
@@ -120,30 +121,31 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news topic from the user, generate a structured plan of at least 10 very specific Google Search queries to run in parallel.
-    Unless the user requests otherwise, ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
-    Use `google_search` to execute a first pass and inform the search strategy.
+    Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
+    Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
+    Use `google_search` to execute a first pass to discover the most important beats.
     """,
     tools=[google_search],
-    output_schema=SearchPlan,
-    output_key="search_plan",
+    output_schema=TopicPlan,
+    output_key="topic_plan",
 )
 
 
 def create_research_agent(topic: str, index: int) -> Agent:
     agent_name = f"researcher_{index}"
-    out_key = f"search_result_{index}"
+    out_key = f"article_{index}"
     return Agent(
         name=agent_name,
         model=worker_model,
         instruction=f"""
         The current date and time is: {get_current_server_time()}
         
-        Research the following topic: {topic}. 
-        Return highly detailed factual content from your tools. Do not include URLs or citations in your text output.
+        You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
+        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `Article` schema.
+        Use `google_search` to gather factual information.
         """,
         tools=[google_search],
-        output_schema=SearchResult,
+        output_schema=Article,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -153,12 +155,12 @@ class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("search_plan")
-        if not plan or not plan.get("queries"):
+        plan = ctx.session.state.get("topic_plan")
+        if not plan or not plan.get("topics"):
             return
 
         researchers = [
-            create_research_agent(query, i) for i, query in enumerate(plan["queries"])
+            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
         ]
 
         parallel_runner = ParallelAgent(
@@ -179,9 +181,8 @@ compiler_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are the news editor-in-chief. 
-    The results from the parallel research team are available in the state under keys starting with 'search_result_'.
-    Read all of these results. They contain deterministic arrays of "citations" as well as "content".
-    Synthesize them into a cohesive, engaging final newspaper. Preserve the exact URLs provided in the state arrays.
+    The articles drafted by the parallel research team are available in the state under keys starting with 'article_'.
+    Read all of these drafted articles. Choose the best ones, drop or merge duplicates, evaluate them for quality, and compile them into a cohesive final `NewspaperPage`.
     """,
     output_schema=NewspaperPage,
     output_key="compiled_news",

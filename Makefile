@@ -10,6 +10,7 @@ help:
 	@echo "| Agent Workshop Development Commands                                         |"
 	@echo "==============================================================================="
 	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
+	@echo "  make run-webapp     - Launch the AI Newsroom Web UI directly"
 	@echo "  make test           - Run unit and integration tests"
 	@echo "  make eval           - Run agent evaluation using ADK evalsets"
 	@echo "  make lint           - Run code quality checks"
