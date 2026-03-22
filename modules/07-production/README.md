@@ -1,4 +1,4 @@
-# Module 06: Production
+# Module 07: Production
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]
 
@@ -19,6 +19,6 @@
 If you fall behind or your code isn't working, you can always catch up to the final completed solution by running:
 
 ```bash
-make catchup module=06
+make catchup module=07
 ```
 *(Note: This will completely overwrite your current `workspace/` with the final solution for this module!)*

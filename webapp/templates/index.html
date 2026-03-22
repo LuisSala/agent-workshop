@@ -1,22 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Newsroom</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Input Overlay -->
         <div id="input-screen" class="screen active">
             <div class="search-box">
-                <h1>Daily AI Newsroom</h1>
-                <p>Enter a broadcast subject for the AI Editor-in-Chief.</p>
+                <h1>AI Newsroom</h1>
+                <p>Enter topics for the AI Editor-in-Chief.</p>
                 <div class="input-group">
-                    <input type="text" id="query-input" placeholder="e.g. Latest advancements in Google Gemini and OpenAI">
-                    <button id="search-btn">Dispatch Team</button>
+                    <input type="text" id="query-input"
+                        placeholder="e.g. Latest advancements in Google Gemini and OpenAI">
+                    <button id="search-btn">Dispatch Research Team</button>
                 </div>
             </div>
         </div>
@@ -37,9 +42,9 @@
         <div id="news-screen" class="screen">
             <header class="top-nav">
                 <div class="logo">Daily🗞️AI</div>
-                <button id="new-search-btn" class="nav-btn">New Blueprint</button>
+                <button id="new-search-btn" class="nav-btn">New Search</button>
             </header>
-            
+
             <main class="news-layout">
                 <div class="feed-col" id="article-grid">
                     <!-- Cards are dynamically injected here -->
@@ -47,7 +52,7 @@
             </main>
         </div>
     </div>
-    
+
     <!-- Modal for full article -->
     <div id="article-modal" class="modal">
         <div class="modal-content">
@@ -66,4 +71,5 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/static/js/main.js"></script>
 </body>
+
 </html>

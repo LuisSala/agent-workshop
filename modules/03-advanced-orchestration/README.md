@@ -16,7 +16,7 @@ flowchart TD
     
     subgraph News Pipeline
       direction TB
-      P[Planner Agent] -->|search_plan JSON| PAR[Parallel Researcher Factory]
+      P[Planner Agent] -->|topic_plan JSON| PAR[Parallel Researcher Factory]
       PAR -->|Spawns| RES1[Researcher 1]
       PAR -->|Spawns| RES2[Researcher 2]
       RES1 -->|google_search| G[(Google)]
@@ -44,10 +44,12 @@ class Citation(BaseModel):
     title: str = Field(description="Title of the source")
     url: str = Field(description="URL of the source")
 
-class Article(BaseModel):
+class ArticleDraft(BaseModel):
     title: str = Field(description="Catchy headline")
     teaser: str = Field(description="Short engaging teaser in markdown format")
     content: str = Field(description="Full article content in markdown format")
+
+class Article(ArticleDraft):
     citations: list[Citation] = Field(description="Sources used in this article")
 
 class NewspaperPage(BaseModel):
@@ -100,6 +102,26 @@ def make_citations_callback(agent_name: str, output_key: str):
                 state_val["citations"] = citations
 
     return extract_citations_callback
+
+async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
+    articles_data = []
+    for i in range(100):
+        key = f"article_{i}"
+        val = callback_context.state.get(key)
+        if val is not None:
+            articles_data.append(val)
+    import json
+
+    # Exclude Pydantic objects or dicts by coercing them uniformly
+    serialized = []
+    for art in articles_data:
+        if hasattr(art, "model_dump"):
+            serialized.append(art.model_dump())
+        elif hasattr(art, "dict"):
+            serialized.append(art.dict())
+        else:
+            serialized.append(art)
+    callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
 ```
 </details>
 
@@ -124,11 +146,11 @@ def create_research_agent(topic: str, index: int) -> Agent:
         The current date and time is: {{get_current_server_time()}}
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
-        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `Article` schema.
+        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `ArticleDraft` schema.
         Use `google_search` to gather factual information.
         """,
         tools=[google_search],
-        output_schema=Article,
+        output_schema=ArticleDraft,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -243,9 +265,10 @@ This is the power of the ADK Callback system: it allows you to blend the creativ
 Now that you have the supporting pieces, define `planner_agent` to take a broad user query and configure the `TopicPlan` schema! Guarantee it outputs to `output_key="topic_plan"`. 
 
 ### 2. Build the Compiler 
-Create the `compiler_agent`. Make sure it reads the results produced by the `research_team` and outputs to the `NewspaperPage` schema using `output_key="compiled_news"`. 
+Create the `compiler_agent`. Make sure it reads the results produced by the `research_team` via `{draft_articles}` and outputs to the `NewspaperPage` schema using `output_key="compiled_news"`. 
+You MUST attach the `before_agent_callback=prepare_drafts_callback` to ensure it formats the JSON string smoothly before reading!
 
-**Crucial Prompting Tip:** In your instructions, explicitly tell the Compiler to *preserve* the citations array exactly as it appears in the state. Warn it that if an article's citation array is empty `[]`, it must output an empty array and **never** hallucinate or invent URLs! 
+**Crucial Prompting Tip:** In your instructions, explicitly tell the Compiler to *preserve* the citations array exactly as it appears in the data. Warn it that if an article's citation array is empty `[]`, it must output an empty array and **never** hallucinate or invent URLs! 
 
 ### 3. Wire the Pipeline and Delegate!
 Wrap your three agents (`planner_agent`, `research_team`, `compiler_agent`) in a `SequentialAgent` named `news_pipeline`. 
@@ -269,3 +292,9 @@ If you fall behind or your code isn't working, you can instantly catch up to the
 make catchup module=04
 ```
 *(Note: This will completely overwrite your current `workspace/` with the known good baseline for the next module!)*
+
+## References & Further Reading
+*   **[Parallel Agents Documentation](https://google.github.io/adk-docs/agents/workflow-agents/parallel-agents/)**: Core concepts for configuring a `ParallelAgent` workflow, firing off sub-agents concurrently to execute isolated work.
+*   **[Callbacks: Observe, Customize, and Control](https://google.github.io/adk-docs/callbacks/)**: Extremely detailed explanation of ADK lifecycle hooks (`before_agent_callback` and `after_agent_callback`) for intercepting and altering the LLM Event stream.
+*   **[Vertex AI Search Grounding Guide](https://google.github.io/adk-docs/grounding/vertex-ai-search-grounding/)**: Details how to connect agents to Vertex AI for grounding, and specifically how to extract authentic web citations from `grounding_metadata`.
+*   **[Academic Research Sample](https://github.com/google/adk-samples/tree/main/python/agents/academic-research)**: Code reference for utilizing parallel researchers and compiling factual content.

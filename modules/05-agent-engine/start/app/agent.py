@@ -239,73 +239,14 @@ news_pipeline = SequentialAgent(
     sub_agents=[planner_agent, research_team, compiler_agent],
 )
 
-def search_news_archive(query: str, top_k: int = 5) -> str:
-    """
-    Search for existing, previously generated or accumulated news articles.
-    Provides historical context on topics that have already been covered.
-    """
-    import os
-    import json
-    from google.cloud import vectorsearch_v1beta
-    
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    collection_id = os.environ.get("VECTOR_SEARCH_COLLECTION_ID", "archived-news")
-    data_search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-    parent = f"projects/{project_id}/locations/{location}/collections/{collection_id}"
-    
-    batch_search_request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
-        parent=parent,
-        searches=[
-            vectorsearch_v1beta.Search(
-                semantic_search=vectorsearch_v1beta.SemanticSearch(
-                    search_text=query, search_field="content_embedding", task_type="QUESTION_ANSWERING", top_k=top_k, output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"])
-                )
-            ),
-            vectorsearch_v1beta.Search(
-                text_search=vectorsearch_v1beta.TextSearch(
-                    search_text=query, data_field_names=["title", "teaser", "content"], top_k=top_k, output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"])
-                )
-            ),
-        ],
-        combine=vectorsearch_v1beta.BatchSearchDataObjectsRequest.CombineResultsOptions(
-            ranker=vectorsearch_v1beta.Ranker(rrf=vectorsearch_v1beta.ReciprocalRankFusion(weights=[1.0, 1.0]))
-        ),
-    )
-    
-    try:
-        batch_results = data_search_client.batch_search_data_objects(batch_search_request)
-        if not batch_results.results: return "No archived articles found."
-        
-        output = ""
-        for result in batch_results.results[0].results:
-            data = result.data_object.data
-            output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
-        return output
-    except Exception as e:
-        return f"Archive search failed: {e}"
-
-archive_reader_agent = Agent(
-    name="archive_reader_agent",
-    model=worker_model,
-    instruction=f"""
-    The current date and time is: {get_current_server_time()}
-    You are an archival librarian answering questions using past editions of the newspaper.
-    Always search the archive using `search_news_archive`. Summarize the findings accurately.
-    """,
-    tools=[search_news_archive],
-)
-
 root_agent = Agent(
     name="root_agent",
     model=worker_model,
     instruction="""
-    You are a helpful, conversational AI. 
-    - If the user explicitly asks about past, historical, or previously covered topics, delegate to `archive_reader_agent`.
-    - If the user asks you to look up fresh or current news to write a new article, delegate to `news_pipeline`.
-    - Otherwise, answer the user's query directly.
+    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
+    whenever a user asks you to look up news; otherwise, answer the user's query directly.
     """,
-    sub_agents=[news_pipeline, archive_reader_agent],
+    sub_agents=[news_pipeline],
 )
 
 app = App(

@@ -163,3 +163,8 @@ If you fall behind or your code isn't working, you can instantly catch up to the
 make catchup module=03
 ```
 *(Note: This will completely overwrite your current `workspace/` with the known good baseline for the next module!)*
+
+## References & Further Reading
+*   **[Sequential agents Guide](https://google.github.io/adk-docs/agents/workflow-agents/sequential-agents/)**: The primary documentation for `SequentialAgent`, pipeline architecture, and passing control.
+*   **[Delegation and Multi-agent systems](https://google.github.io/adk-docs/agents/multi-agents/)**: Covers hierarchical agent structures, Shared Session State memory passing, and LLM-driven agent transfer (Delegation) via `sub_agents`.
+*   **[Hierarchical Workflow Automation Sample](https://github.com/google/adk-samples/tree/main/python/agents/hierarchical-workflow-automation)**: A concrete implementation demonstrating a hierarchical multi-agent system utilizing `sub_agents` and automated workflow orchestration.
