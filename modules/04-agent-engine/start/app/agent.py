@@ -38,10 +38,13 @@ class SearchResult(BaseModel):
     content: str = Field(description="The factual content found")
 
 
-class Article(BaseModel):
+class ArticleDraft(BaseModel):
     title: str = Field(description="Catchy headline")
-    teaser: str = Field(description="Short engaging teaser")
-    content: str = Field(description="Full article content")
+    teaser: str = Field(description="Short engaging teaser in markdown format")
+    content: str = Field(description="Full article content in markdown format")
+
+
+class Article(ArticleDraft):
     citations: list[Citation] = Field(description="Sources used in this article")
 
 
@@ -51,9 +54,9 @@ class NewspaperPage(BaseModel):
     )
 
 
-class SearchPlan(BaseModel):
-    queries: list[str] = Field(
-        description="A list of at least 5 very specific Google Search queries to research."
+class TopicPlan(BaseModel):
+    topics: list[str] = Field(
+        description="A list of specific beats or topics to investigate."
     )
 
 
@@ -69,14 +72,19 @@ def make_citations_callback(agent_name: str, output_key: str):
     async def extract_citations_callback(callback_context: CallbackContext) -> None:
         """
         Extracts citations from the LLM's grounding metadata.
+
+        THE PROBLEM: LLMs are notoriously bad at generating accurate URLs. If you ask
+        an LLM to output a `Citation` Pydantic object, it will likely invent a fake URL
+        that looks plausible but returns a 404 error.
+
+        THE SOLUTION: When using Vertex AI Search via ADK's `google_search` tool, the
+        underlying Vertex API attaches highly accurate, deterministic `grounding_metadata`
+        to the ADK Event stream.
         
-        The ADK Event object stores the raw Gemini API response. When a tool like 
-        `google_search` is used natively by Vertex AI, the model attaches a 
-        `grounding_metadata` object to the event. 
-        
-        Inside `grounding_metadata.grounding_chunks`, there are web chunk objects 
-        with `.web.title` and `.web.uri` properties containing the exact 
-        sources the model used to generate its factual response.
+        This `after_agent_callback` runs immediately after the LLM finishes drafting the
+        article. It traverses the Event stream, finds the true URLs supplied by Google
+        Search, and forcefully overwrites the LLM's hallucinated citations in the
+        structured Pydantic state with the verified URLs.
         """
         session = callback_context._invocation_context.session
         citations = []
@@ -84,26 +92,64 @@ def make_citations_callback(agent_name: str, output_key: str):
 
         # Traverse events in reverse to find the latest grounding chunks for this agent
         for event in reversed(session.events):
-            if (
-                event.author == agent_name
-                and getattr(event, "grounding_metadata", None)
-                and getattr(event.grounding_metadata, "grounding_chunks", None)
-            ):
-                for chunk in event.grounding_metadata.grounding_chunks:
-                    if getattr(chunk, "web", None) and chunk.web.uri not in seen_urls:
-                        seen_urls.add(chunk.web.uri)
-                        citations.append({"title": getattr(chunk.web, "title", "No Title"), "url": chunk.web.uri})
-                break  # Only process the final response
+            if not getattr(event, "grounding_metadata", None):
+                continue
+            if not getattr(event.grounding_metadata, "grounding_chunks", None):
+                continue
+            if event.author != agent_name:
+                continue
+
+            for chunk in event.grounding_metadata.grounding_chunks:
+                if getattr(chunk, "web", None) and chunk.web.uri not in seen_urls:
+                    seen_urls.add(chunk.web.uri)
+                    citations.append(
+                        {
+                            "title": getattr(chunk.web, "title", "No Title"),
+                            "url": chunk.web.uri,
+                        }
+                    )
+            break  # Only process the final response
 
         # Inject the deterministic citations into the structured state!
-        if (
-            output_key
-            and output_key in callback_context.state
-            and isinstance(callback_context.state[output_key], dict)
-        ):
-            callback_context.state[output_key]["citations"] = citations
+        print(
+            f"[DEBUG] {agent_name} generated {len(citations)} citations from grounding chunks."
+        )
+        if output_key and output_key in callback_context.state:
+            state_val = callback_context.state[output_key]
+            # Replace hallucinated citations with the true grounding URLs
+            if hasattr(state_val, "citations"):
+                state_val.citations = [Citation(**c) for c in citations]
+                print(
+                    f"[DEBUG] Pydantic citations overridden to array of length {len(state_val.citations)}"
+                )
+            elif isinstance(state_val, dict):
+                state_val["citations"] = citations
+                print(
+                    f"[DEBUG] Dict citations overridden to array of length {len(state_val['citations'])}"
+                )
 
     return extract_citations_callback
+
+
+async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
+    articles_data = []
+    for i in range(100):
+        key = f"article_{i}"
+        val = callback_context.state.get(key)
+        if val is not None:
+            articles_data.append(val)
+    import json
+
+    # Exclude Pydantic objects or dicts by coercing them uniformly
+    serialized = []
+    for art in articles_data:
+        if hasattr(art, "model_dump"):
+            serialized.append(art.model_dump())
+        elif hasattr(art, "dict"):
+            serialized.append(art.dict())
+        else:
+            serialized.append(art)
+    callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
 
 
 # --- Agents & Workflows ---
@@ -115,30 +161,31 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news topic from the user, generate a structured plan of at least 5 very specific Google Search queries to run in parallel.
-    Ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
-    Use `google_search` to inform your 
+    Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
+    Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
+    Use `google_search` to execute a first pass to discover the most important beats.
     """,
     tools=[google_search],
-    output_schema=SearchPlan,
-    output_key="search_plan",
+    output_schema=TopicPlan,
+    output_key="topic_plan",
 )
 
 
 def create_research_agent(topic: str, index: int) -> Agent:
     agent_name = f"researcher_{index}"
-    out_key = f"search_result_{index}"
+    out_key = f"article_{index}"
     return Agent(
         name=agent_name,
         model=worker_model,
         instruction=f"""
         The current date and time is: {get_current_server_time()}
         
-        Research the following topic: {topic}. 
-        Return highly detailed factual content from your tools. Do not include URLs or citations in your text output.
+        You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
+        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `ArticleDraft` schema.
+        Use `google_search` to gather factual information.
         """,
         tools=[google_search],
-        output_schema=SearchResult,
+        output_schema=ArticleDraft,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -148,12 +195,12 @@ class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("search_plan")
-        if not plan or not plan.get("queries"):
+        plan = ctx.session.state.get("topic_plan")
+        if not plan or not plan.get("topics"):
             return
 
         researchers = [
-            create_research_agent(query, i) for i, query in enumerate(plan["queries"])
+            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
         ]
 
         parallel_runner = ParallelAgent(
@@ -174,12 +221,16 @@ compiler_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are the news editor-in-chief. 
-    The results from the parallel research team are available in the state under keys starting with 'search_result_'.
-    Read all of these results. They contain deterministic arrays of "citations" as well as "content".
-    Synthesize them into a cohesive, engaging final newspaper. Preserve the exact URLs provided in the state arrays.
+    Here are the drafted articles from your reporters, including their true and final citations:
+    {{draft_articles}}
+
+    Read all of these drafted articles. Choose the best ones, drop or merge duplicates, evaluate them for quality, and compile them into a cohesive final `NewspaperPage`.
+
+    CRITICAL INSTRUCTION: You must strictly preserve the exact `citations` array provided for each article in the data above. If an article's `citations` array is empty `[]`, you MUST output an empty array for that article. DO NOT invent, hallucinate, or infer any URLs.
     """,
     output_schema=NewspaperPage,
     output_key="compiled_news",
+    before_agent_callback=prepare_drafts_callback,
 )
 
 news_pipeline = SequentialAgent(
@@ -237,18 +288,16 @@ async def main():
         async for event in runner.run_async(
             user_id=user_id, session_id=session_id, new_message=user_message
         ):
-            if (
-                hasattr(event, "content")
-                and event.content
-                and isinstance(event.content, types.Content)
-            ):
+            if event.is_final_response() and event.content:
                 for part in event.content.parts:
                     if part.text:
                         print(f"[{event.author}]: {part.text}")
 
+        print(f"DEBUG Registry: {session_service.sessions}")
+        
         # 7. Retrieve the populated state AFTER execution completes
         current_session = await session_service.get_session(
-            app_name=app_name, user_id=user_id, session_id=session_id
+            app_name=runner.app_name, user_id=user_id, session_id=session_id
         )
 
         # 8. Extract the compiled newspaper from the final state

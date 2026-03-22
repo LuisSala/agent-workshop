@@ -220,6 +220,23 @@ if __name__ == "__main__":
 
 ---
 
+## The Big Lesson: Defeating URL Hallucination with Callbacks
+
+One of the single biggest challenges in Agentic AI is **URL Hallucination**. If you ask an LLM to populate a `Citation` schema with a `url` field, it will frequently generate "ghost links" (URLs that look perfectly logical but lead to 404 errors).
+
+How do we solve this in Module 03? **We don't trust the LLM.**
+
+Instead of relying on the model to accurately format a URL string, we leverage the ADK's native integration with **Vertex AI Grounding**.
+
+1. When the `google_search` tool is invoked, Vertex AI appends the *true, deterministic URLs* to the raw LLM response as `grounding_metadata`.
+2. ADK automatically maps this metadata into its `Event` stream.
+3. We attach an **`after_agent_callback`** (`make_citations_callback`) to the Researcher agents.
+4. As soon as a Researcher finishes drafting an article, the callback intercepts the pipeline, reads the event stream, finds the authentic URLs, and **forcefully overwrites** the LLM's hallucinated citation array in the `session.state`.
+
+This is the power of the ADK Callback system: it allows you to blend the creative reasoning of an LLM with the deterministic data safety of traditional software engineering.
+
+---
+
 ## Your Objectives
 
 ### 1. Build the Editor-in-Chief (Planner Agent)
