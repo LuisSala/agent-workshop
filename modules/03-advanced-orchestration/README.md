@@ -228,6 +228,8 @@ Now that you have the supporting pieces, define `planner_agent` to take a broad 
 ### 2. Build the Compiler 
 Create the `compiler_agent`. Make sure it reads the results produced by the `research_team` and outputs to the `NewspaperPage` schema using `output_key="compiled_news"`. 
 
+**Crucial Prompting Tip:** In your instructions, explicitly tell the Compiler to *preserve* the citations array exactly as it appears in the state. Warn it that if an article's citation array is empty `[]`, it must output an empty array and **never** hallucinate or invent URLs! 
+
 ### 3. Wire the Pipeline and Delegate!
 Wrap your three agents (`planner_agent`, `research_team`, `compiler_agent`) in a `SequentialAgent` named `news_pipeline`. 
 

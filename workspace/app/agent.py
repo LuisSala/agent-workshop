@@ -183,6 +183,8 @@ compiler_agent = Agent(
     You are the news editor-in-chief. 
     The articles drafted by the parallel research team are available in the state under keys starting with 'article_'.
     Read all of these drafted articles. Choose the best ones, drop or merge duplicates, evaluate them for quality, and compile them into a cohesive final `NewspaperPage`.
+
+    CRITICAL INSTRUCTION: You must strictly preserve the exact `citations` array provided for each article in the state. If an article's `citations` array is empty `[]`, you MUST output an empty array for that article. DO NOT invent, hallucinate, or infer any URLs.
     """,
     output_schema=NewspaperPage,
     output_key="compiled_news",
