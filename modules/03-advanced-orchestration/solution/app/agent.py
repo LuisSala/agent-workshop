@@ -40,8 +40,8 @@ class SearchResult(BaseModel):
 
 class Article(BaseModel):
     title: str = Field(description="Catchy headline")
-    teaser: str = Field(description="Short engaging teaser in markdown format")
-    content: str = Field(description="Full article content in markdown format")
+    teaser: str = Field(description="Short engaging teaser")
+    content: str = Field(description="Full article content")
     citations: list[Citation] = Field(description="Sources used in this article")
 
 
@@ -53,7 +53,7 @@ class NewspaperPage(BaseModel):
 
 class SearchPlan(BaseModel):
     queries: list[str] = Field(
-        description="A list of very specific Google Search queries to research."
+        description="A list of at least 5 very specific Google Search queries to research."
     )
 
 
@@ -69,13 +69,13 @@ def make_citations_callback(agent_name: str, output_key: str):
     async def extract_citations_callback(callback_context: CallbackContext) -> None:
         """
         Extracts citations from the LLM's grounding metadata.
-
-        The ADK Event object stores the raw Gemini API response. When a tool like
-        `google_search` is used natively by Vertex AI, the model attaches a
-        `grounding_metadata` object to the event.
-
-        Inside `grounding_metadata.grounding_chunks`, there are web chunk objects
-        with `.web.title` and `.web.uri` properties containing the exact
+        
+        The ADK Event object stores the raw Gemini API response. When a tool like 
+        `google_search` is used natively by Vertex AI, the model attaches a 
+        `grounding_metadata` object to the event. 
+        
+        Inside `grounding_metadata.grounding_chunks`, there are web chunk objects 
+        with `.web.title` and `.web.uri` properties containing the exact 
         sources the model used to generate its factual response.
         """
         session = callback_context._invocation_context.session
@@ -92,12 +92,7 @@ def make_citations_callback(agent_name: str, output_key: str):
                 for chunk in event.grounding_metadata.grounding_chunks:
                     if getattr(chunk, "web", None) and chunk.web.uri not in seen_urls:
                         seen_urls.add(chunk.web.uri)
-                        citations.append(
-                            {
-                                "title": getattr(chunk.web, "title", "No Title"),
-                                "url": chunk.web.uri,
-                            }
-                        )
+                        citations.append({"title": getattr(chunk.web, "title", "No Title"), "url": chunk.web.uri})
                 break  # Only process the final response
 
         # Inject the deterministic citations into the structured state!
@@ -120,9 +115,9 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news topic from the user, generate a structured plan of at least 10 very specific Google Search queries to run in parallel.
-    Unless the user requests otherwise, ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
-    Use `google_search` to execute a first pass and inform the search strategy.
+    Given a broad news topic from the user, generate a structured plan of at least 5 very specific Google Search queries to run in parallel.
+    Ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
+    Use `google_search` to inform your 
     """,
     tools=[google_search],
     output_schema=SearchPlan,
@@ -252,7 +247,9 @@ async def main():
                         print(f"[{event.author}]: {part.text}")
 
         # 7. Retrieve the populated state AFTER execution completes
-        current_session = await session_service.get_session(session_id)
+        current_session = await session_service.get_session(
+            app_name=app_name, user_id=user_id, session_id=session_id
+        )
 
         # 8. Extract the compiled newspaper from the final state
         compiled = current_session.state.get("compiled_news", {})

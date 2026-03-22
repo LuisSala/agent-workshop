@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Newsroom</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Input Overlay -->
+        <div id="input-screen" class="screen active">
+            <div class="search-box">
+                <h1>Daily AI Newsroom</h1>
+                <p>Enter a broadcast subject for the AI Editor-in-Chief.</p>
+                <div class="input-group">
+                    <input type="text" id="query-input" placeholder="e.g. Latest advancements in Google Gemini and OpenAI">
+                    <button id="search-btn">Dispatch Team</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terminal Overlay -->
+        <div id="terminal-screen" class="screen">
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <span></span><span></span><span></span>
+                    <p>ADK Runner Execution Log</p>
+                </div>
+                <div id="terminal-output"></div>
+                <div class="loader">Compiling Newsletter...</div>
+            </div>
+        </div>
+
+        <!-- News Feed Overlay -->
+        <div id="news-screen" class="screen">
+            <header class="top-nav">
+                <div class="logo">Daily🗞️AI</div>
+                <button id="new-search-btn" class="nav-btn">New Blueprint</button>
+            </header>
+            
+            <main class="news-layout">
+                <div class="feed-col" id="article-grid">
+                    <!-- Cards are dynamically injected here -->
+                </div>
+                <aside class="sidebar-col">
+                    <div class="widget market-widget">
+                        <h3>Market Outlook</h3>
+                        <div class="market-list">
+                            <div class="market-item"><span>S&P Futures</span> <span class="down">↓ 1.52%</span></div>
+                            <div class="market-item"><span>NASDAQ Fut.</span> <span class="down">↓ 1.95%</span></div>
+                            <div class="market-item"><span>Bitcoin</span> <span class="up">↑ 0.79%</span></div>
+                            <div class="market-item"><span>VIX</span> <span class="up">↑ 11.31%</span></div>
+                        </div>
+                    </div>
+                    <div class="widget trending-widget">
+                        <h3>Trending Companies</h3>
+                        <div class="trending-list">
+                            <div class="trend-item"><div class="square msft"></div>Microsoft Corporation</div>
+                            <div class="trend-item"><div class="square nvda"></div>NVIDIA Corporation</div>
+                            <div class="trend-item"><div class="square mrvi"></div>Marvell Technology</div>
+                            <div class="trend-item"><div class="square oai"></div>OpenAI</div>
+                        </div>
+                    </div>
+                </aside>
+            </main>
+        </div>
+    </div>
+    
+    <!-- Modal for full article -->
+    <div id="article-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <img id="modal-img" src="" alt="Cover">
+            <h1 id="modal-title"></h1>
+            <div class="modal-meta">
+                <span id="modal-sources"></span>
+            </div>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

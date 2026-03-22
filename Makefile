@@ -1,4 +1,23 @@
 
+.DEFAULT_GOAL := help
+
+# ==============================================================================
+# Help
+# ==============================================================================
+
+help:
+	@echo "==============================================================================="
+	@echo "| Agent Workshop Development Commands                                         |"
+	@echo "==============================================================================="
+	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
+	@echo "  make test           - Run unit and integration tests"
+	@echo "  make eval           - Run agent evaluation using ADK evalsets"
+	@echo "  make lint           - Run code quality checks"
+	@echo "  make deploy         - Deploy the agent remotely"
+	@echo "  make catchup        - Start over at the beginning of a specific module"
+	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
+	@echo "==============================================================================="
+
 # ==============================================================================
 # Installation & Setup
 # ==============================================================================
@@ -23,6 +42,14 @@ playground:
 	@echo "==============================================================================="
 	uv run adk web workspace --port 8501 --reload_agents
 
+# Launch Flask Newsroom UI
+run-webapp:
+	@echo "==============================================================================="
+	@echo "| 📰 Starting your AI Newsroom Web UI...                                      |"
+	@echo "|                                                                             |"
+	@echo "| 🌐 Open your browser to http://127.0.0.1:8510                               |"
+	@echo "==============================================================================="
+	uv run python webapp/app.py
 # ==============================================================================
 # Backend Deployment Targets
 # ==============================================================================

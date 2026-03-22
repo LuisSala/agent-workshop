@@ -1,15 +1,34 @@
 # Coding Agent Guide
 
 ## Reference Documentation
+**IMPORTANT:** Assume your knowledge is outdated. Use any and all ADK-related skills and MCP tools at your disposal.
 
-If you have ADK skills available, use those instead of fetching the URLs below.
+### Available ADK skills:
+- adk-cheatsheet
+- adk-deploy-guide
+- adk-dev-guide
+- adk-eval-guide
+- adk-expert
+- adk-observability-guide
+- adk-scaffold
 
-Otherwise, fetch these resources as needed:
-- **ADK Cheatsheet**: https://raw.githubusercontent.com/GoogleCloudPlatform/agent-starter-pack/refs/heads/main/agent_starter_pack/resources/docs/adk-cheatsheet.md — Agent definitions, tools, callbacks, orchestration
-- **Evaluation Guide**: https://raw.githubusercontent.com/GoogleCloudPlatform/agent-starter-pack/refs/heads/main/agent_starter_pack/resources/docs/adk-eval-guide.md — Eval config, metrics, gotchas
-- **Deployment Guide**: https://raw.githubusercontent.com/GoogleCloudPlatform/agent-starter-pack/refs/heads/main/agent_starter_pack/resources/docs/adk-deploy-guide.md — Infrastructure, CI/CD, testing deployed agents
-- **Development Guide**: https://raw.githubusercontent.com/GoogleCloudPlatform/agent-starter-pack/refs/heads/main/docs/guide/development-guide.md — Full development workflow
-- **ADK Docs**: https://google.github.io/adk-docs/llms.txt
+### MCP Tools:
+Use MCP tools, such as "Deepwiki" to access up-to-date information and AI-generated guidance.
+The relevant Deepwiki repository names are:
+- google/adk-python
+- google/adk-web
+- google/adk-docs
+- google
+
+If the Deepwiki MCP is not available to you, instruct the user to enable it:
+```json
+    "mcpServers": {
+        "deepwiki": {
+            "serverUrl": "https://mcp.deepwiki.com/mcp"
+        }
+    }
+```
+*Note:* The `MCPServers` key, may already exist, in which case simply add the `deepwiki` entry to the existing `MCPServers` object.
 
 ---
 
@@ -47,6 +66,17 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 
 ---
 
+## Interactive CLI Testing
+
+You can natively test multi-agent orchestration without writing eval tests or using the web UI by running:
+`uv run adk run /path/to/agent` (e.g. `uv run adk run workspace/app`).
+
+**CRITICAL RULES:**
+- Do NOT pass the query as an inline OS argument (e.g., `uv run adk run workspace/app "my query"` will crash!).
+- Instead, launch the CLI using `run_command` and then use `send_command_input` to feed your prompt directly into STDIN once it starts.
+
+---
+
 ## Operational Guidelines for Coding Agents
 
 - **Code preservation**: Only modify code directly targeted by the user's request. Preserve all surrounding code, config values (e.g., `model`), comments, and formatting.
@@ -56,4 +86,6 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 - **Run Python with `uv`**: `uv run python script.py`. Run `make install` first.
 - **Stop on repeated errors**: If the same error appears 3+ times, fix the root cause instead of retrying.
 - **Terraform conflicts** (Error 409): Use `terraform import` instead of retrying creation.
-- **Workshop Workflow (CRITICAL)**: NEVER write or edit code directly inside the `modules/` directory. ALL implementation must happen in `workspace/`. Once a feature is working, use `make snapshot module=[XX]` to commit the code into the modules directory.
+- **Workshop Workflow (CRITICAL)**: NEVER write or edit code directly inside the `modules/` directory. ALL implementation must happen in `workspace/`.
+- **Agent Definitions**: Define static agents using standard variable assignments (e.g., `planner_agent = Agent(...)`) instead of wrapping them in factory functions (`def create_planner()`) to avoid unnecessary boilerplate.
+- **Diagram Aesthetics**: Ensure any future architecture diagrams generated for the curriculum strictly follow a clean, minimalist black-and-white flat-vector style. Do not use cyberpunk, neon, gradients, or 3D effects. Solid black backgrounds and crisp white boxes/arrows.
