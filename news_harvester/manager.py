@@ -1,225 +1,146 @@
 import os
 import json
 import asyncio
+import argparse
 from dotenv import load_dotenv
-from google.cloud import vectorsearch_v1beta
-from google.api_core.exceptions import AlreadyExists
 
-# Load .env (checking workspace folder)
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'workspace', '.env'))
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.vector_store import initialize_collection, insert_article
 
-def _get_project_and_location():
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    if not project_id:
-        raise ValueError("GOOGLE_CLOUD_PROJECT environment variable not set.")
-    return project_id, location
+async def run_harvester(do_harvest: bool, do_ingest: bool):
+    corpus_path = os.path.join(os.path.dirname(__file__), "corpus.jsonl")
+    processed_file = os.path.join(os.path.dirname(__file__), "processed_topics.txt")
 
-def get_collection_id() -> str:
-    return os.environ.get("VECTOR_SEARCH_COLLECTION_ID", "archived-news")
-
-def get_clients():
-    vector_search_service_client = vectorsearch_v1beta.VectorSearchServiceClient()
-    data_object_service_client = vectorsearch_v1beta.DataObjectServiceClient()
-    data_object_search_service_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-    return vector_search_service_client, data_object_service_client, data_object_search_service_client
-
-def initialize_collection():
-    """Initializes the Vector Search Collection if it doesn't exist."""
-    print("Initializing Google Cloud Vector Search Collection...")
-    project_id, location = _get_project_and_location()
-    collection_id = get_collection_id()
-    vector_search_client, _, _ = get_clients()
-    
-    parent = f"projects/{project_id}/locations/{location}"
-    collection_name = f"{parent}/collections/{collection_id}"
-    
-    try:
-        vector_search_client.get_collection(name=collection_name)
-        print(f"Collection '{collection_id}' already exists.")
-        return
-    except Exception as e:
-        if "404" not in str(e) and "NOT_FOUND" not in str(e):
-            print(f"Error checking collection: {e}")
-            pass
-    
-    print(f"Creating Collection: '{collection_id}'...")
-    request = vectorsearch_v1beta.CreateCollectionRequest(
-        parent=parent,
-        collection_id=collection_id,
-        collection={
-            "data_schema": {
-                "type": "object",
-                "properties": {
-                    "source_topic": {"type": "string"},
-                    "title": {"type": "string"},
-                    "teaser": {"type": "string"},
-                    "content": {"type": "string"},
-                    "citations": {"type": "string"}, # JSON str
-                },
-            },
-            "vector_schema": {
-                "content_embedding": {
-                    "dense_vector": {
-                        "dimensions": 768,
-                        "vertex_embedding_config": {
-                            "model_id": os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001"),
-                            "text_template": ("Title: {title} Teaser: {teaser} Content: {content}"),
-                            "task_type": "RETRIEVAL_DOCUMENT",
-                        },
-                    }
-                },
-            },
-        },
-    )
-    
-    operation = vector_search_client.create_collection(request=request)
-    print("Waiting for creation to complete...")
-    operation.result()
-    print(f"Collection '{collection_id}' created successfully.")
-
-def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
-    """Search for relevant past news articles about a given topic."""
-    project_id, location = _get_project_and_location()
-    collection_id = get_collection_id()
-    _, _, data_search_client = get_clients()
-    parent = f"projects/{project_id}/locations/{location}/collections/{collection_id}"
-    
-    batch_search_request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
-        parent=parent,
-        searches=[
-            vectorsearch_v1beta.Search(
-                semantic_search=vectorsearch_v1beta.SemanticSearch(
-                    search_text=query,
-                    search_field="content_embedding",
-                    task_type="QUESTION_ANSWERING",
-                    top_k=top_k,
-                    output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"]),
-                )
-            ),
-            vectorsearch_v1beta.Search(
-                text_search=vectorsearch_v1beta.TextSearch(
-                    search_text=query,
-                    data_field_names=["title", "teaser", "content"],
-                    top_k=top_k,
-                    output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"]),
-                )
-            ),
-        ],
-        combine=vectorsearch_v1beta.BatchSearchDataObjectsRequest.CombineResultsOptions(
-            ranker=vectorsearch_v1beta.Ranker(
-                rrf=vectorsearch_v1beta.ReciprocalRankFusion(weights=[1.0, 1.0])
-            )
-        ),
-    )
-    
-    try:
-        batch_results = data_search_client.batch_search_data_objects(batch_search_request)
-        results = []
-        if batch_results.results:
-            combined_results = batch_results.results[0]
-            for result in combined_results.results:
-                data = result.data_object.data
-                results.append({
-                    "topic": data.get("source_topic", ""),
-                    "title": data.get("title", ""),
-                    "teaser": data.get("teaser", ""),
-                    "content": data.get("content", ""),
-                    "citations": json.loads(data.get("citations", "[]")),
-                })
-        return results
-    except Exception as e:
-        print(f"Archive search failed: {e}")
-        return []
-
-def insert_article(topic: str, article: dict):
-    """Inserts a single news article into the Vector Search Collection."""
-    project_id, location = _get_project_and_location()
-    collection_id = get_collection_id()
-    _, data_client, _ = get_clients()
-    parent = f"projects/{project_id}/locations/{location}/collections/{collection_id}"
-    
-    import hashlib
-    # Unique ID from title + topic
-    raw_id = f"{topic}_{article.get('title', '')}"
-    safe_id = hashlib.sha256(raw_id.encode('utf-8')).hexdigest()
-    
-    citations_data = []
-    if hasattr(article, "citations"):
-        for c in article.citations:
-            citations_data.append({"title": getattr(c, "title", ""), "url": getattr(c, "url", "")})
-    elif "citations" in article:
-        citations_data = article["citations"]
+    if do_harvest:
+        try:
+            from workspace.app.agent import news_pipeline, NewspaperPage
+        except ImportError as e:
+            print(f"Error importing news_pipeline: {e}")
+            return
+            
+        topics_to_harvest = [f"Tech Trend #{i} in emerging markets" for i in range(1, 101)]
         
-    request = vectorsearch_v1beta.CreateDataObjectRequest(
-        parent=parent,
-        data_object_id=safe_id,
-        data_object={
-            "data": {
-                "source_topic": topic,
-                "title": article.get("title", "") if isinstance(article, dict) else getattr(article, "title", ""),
-                "teaser": article.get("teaser", "") if isinstance(article, dict) else getattr(article, "teaser", ""),
-                "content": str(article.get("content", "") if isinstance(article, dict) else getattr(article, "content", ""))[-32000:],
-                "citations": json.dumps(citations_data),
-            },
-            "vectors": {},  # Trigger auto-embed
-        },
-    )
-    try:
-        data_client.create_data_object(request=request)
-        print(f" -> Inserted: {article.get('title', '') if isinstance(article, dict) else getattr(article, 'title', '')}")
-    except AlreadyExists:
-        pass
-    except Exception as e:
-        if "already exists" not in str(e).lower() and "409" not in str(e):
-            print(f" -> Failed to insert: {e}")
+        processed_topics = set()
+        if os.path.exists(processed_file):
+            with open(processed_file, "r") as f:
+                processed_topics = set(line.strip() for line in f if line.strip())
 
-async def run_harvester():
-    # Load news pipeline to harvest
-    import sys
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'workspace')))
-    
-    try:
-        from app.agent import news_pipeline, NewspaperPage
-    except ImportError as e:
-        print(f"Error importing news_pipeline: {e}")
-        return
+        remaining_topics = [t for t in topics_to_harvest if t not in processed_topics]
         
-    # 100 Topics to harvest across diverse fields
-    # Generate a massive list of 100 actual topics
-    topics_to_harvest = [
-        f"Topic Set {i}: AI Breakthroughs of 2024" for i in range(1, 101) # Simulating 100+
-    ]
-    # For a real run we can use actual topics, but to ensure the LLM generates varied news:
-    topics_to_harvest = [f"Tech Trend #{i} in emerging markets" for i in range(1, 101)]
-    
-    print(f"Starting HARVEST of {len(topics_to_harvest)} topics...")
-    
-    semaphore = asyncio.Semaphore(10) # 10 concurrent requests to Vertex
-    
-    async def process_topic(topic: str):
-        async with semaphore:
-            print(f"Running pipeline for: {topic}")
-            try:
-                # ADK agents run synchronously typically, so we might need run_in_executor
-                # Alternatively ADK `run` handles it. `news_pipeline.run()` is synchronous by default unless using async callbacks
-                # Let's wrap in thread
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, news_pipeline.run, {"topic": topic})
-                
-                # The output is a NewspaperPage with a list of Article objects
-                compiled_news = result.state.get("compiled_news")
-                if compiled_news and hasattr(compiled_news, "articles"):
-                    for art in compiled_news.articles:
-                        insert_article(topic, art)
-                else:
-                    print(f"No articles generated for {topic}")
-            except Exception as e:
-                print(f"Error running pipeline for {topic}: {e}")
+        if not remaining_topics:
+            print("All topics have already been processed for harvesting.")
+        else:
+            print(f"Starting HARVEST of {len(remaining_topics)} remaining topics...")
+            
+            semaphore = asyncio.Semaphore(10)
+            file_lock = asyncio.Lock()
+            
+            async def process_topic(topic: str):
+                async with semaphore:
+                    print(f"Running pipeline for: {topic}")
+                    try:
+                        from google.adk.runners import Runner
+                        from google.adk.sessions import InMemorySessionService
+                        from google.genai import types
 
-    await asyncio.gather(*(process_topic(t) for t in topics_to_harvest))
-    print("Harvesting complete!")
+                        session_svc = InMemorySessionService()
+                        runner = Runner(agent=news_pipeline, app_name="harvest", session_service=session_svc)
+                        
+                        session_id = f"harvest-{hash(topic)}"
+                        await session_svc.create_session(app_name="harvest", user_id="harvester", session_id=session_id)
+                        msg = types.Content(role="user", parts=[types.Part(text=f"Research topic: {topic}")])
+                        
+                        async for event in runner.run_async(new_message=msg, user_id="harvester", session_id=session_id):
+                            pass
+                        
+                        session_data = await session_svc.get_session("harvest", "harvester", session_id)
+                        compiled_news = session_data.state.get("compiled_news")
+
+                        if compiled_news and hasattr(compiled_news, "articles"):
+                            new_articles = []
+                            for art in compiled_news.articles:
+                                art_dict = {
+                                    "source_topic": topic,
+                                    "title": getattr(art, "title", ""),
+                                    "teaser": getattr(art, "teaser", ""),
+                                    "content": getattr(art, "content", ""),
+                                    "citations": []
+                                }
+                                if hasattr(art, "citations") and art.citations:
+                                    art_dict["citations"] = [
+                                        {"title": getattr(c, "title", ""), "url": getattr(c, "url", "")} 
+                                        for c in art.citations
+                                    ]
+                                new_articles.append(art_dict)
+                                
+                            async with file_lock:
+                                with open(corpus_path, "a", encoding="utf-8") as f:
+                                    for a in new_articles:
+                                        f.write(json.dumps(a) + "\n")
+                                with open(processed_file, "a") as f:
+                                    f.write(topic + "\n")
+                        else:
+                            print(f"No articles generated for {topic}")
+                                
+                    except Exception as e:
+                        print(f"Error running pipeline for {topic}: {e}")
+
+            await asyncio.gather(*(process_topic(t) for t in remaining_topics))
+            print("Harvesting complete!")
+
+    if do_ingest:
+        if not os.path.exists(corpus_path):
+            print(f"Error: {corpus_path} not found. Nothing to ingest.")
+            return
+            
+        print(f"Reading corpus from {corpus_path} for ingestion...")
+        
+        articles_to_insert = []
+        with open(corpus_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    article_data = json.loads(line)
+                    articles_to_insert.append(article_data)
+                except Exception as e:
+                    print(f"Error parsing line: {e}")
+                    
+        if not articles_to_insert:
+            print("No articles found in corpus.jsonl.")
+            return
+            
+        print(f"Starting Ingestion of {len(articles_to_insert)} articles to Vector Search...")
+        semaphore = asyncio.Semaphore(5)
+        
+        async def process_article(article):
+            async with semaphore:
+                topic = article.get("source_topic", article.get("topic", "corpus_ingest"))
+                try:
+                    await asyncio.to_thread(insert_article, topic, article)
+                except Exception as e:
+                    print(f"Error inserting article '{article.get('title')}': {e}")
+                    
+        tasks = [process_article(article) for article in articles_to_insert]
+        await asyncio.gather(*tasks)
+            
+        print("Ingestion complete!")
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="News Harvester and Ingester")
+    parser.add_argument("--harvest", action="store_true", help="Harvest news and append to corpus")
+    parser.add_argument("--ingest", action="store_true", help="Ingest corpus into Vector Search")
+    args = parser.parse_args()
+    
+    if not args.harvest and not args.ingest:
+        print("No operation specified. Defaulting to --harvest and --ingest")
+        do_harvest = True
+        do_ingest = True
+    else:
+        do_harvest = args.harvest
+        do_ingest = args.ingest
+
     initialize_collection()
-    asyncio.run(run_harvester())
+    asyncio.run(run_harvester(do_harvest, do_ingest))
