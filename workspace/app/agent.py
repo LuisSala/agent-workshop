@@ -17,9 +17,12 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from typing import AsyncGenerator
 
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+
 _, project_id = google.auth.default()
-os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("PROJECT_ID", project_id)
+os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION", "global")
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 worker_model = "gemini-3-flash-preview"
@@ -80,7 +83,7 @@ def make_citations_callback(agent_name: str, output_key: str):
         THE SOLUTION: When using Vertex AI Search via ADK's `google_search` tool, the
         underlying Vertex API attaches highly accurate, deterministic `grounding_metadata`
         to the ADK Event stream.
-        
+
         This `after_agent_callback` runs immediately after the LLM finishes drafting the
         article. It traverses the Event stream, finds the true URLs supplied by Google
         Search, and forcefully overwrites the LLM's hallucinated citations in the
@@ -239,51 +242,25 @@ news_pipeline = SequentialAgent(
     sub_agents=[planner_agent, research_team, compiler_agent],
 )
 
+
 def search_news_archive(query: str, top_k: int = 5) -> str:
     """
     Search for existing, previously generated or accumulated news articles.
     Provides historical context on topics that have already been covered.
     """
-    import os
-    import json
-    from google.cloud import vectorsearch_v1beta
+    import sys, os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+    from utils.vector_store import search_archive
     
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    collection_id = os.environ.get("VECTOR_SEARCH_COLLECTION_ID", "archived-news")
-    data_search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-    parent = f"projects/{project_id}/locations/{location}/collections/{collection_id}"
-    
-    batch_search_request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
-        parent=parent,
-        searches=[
-            vectorsearch_v1beta.Search(
-                semantic_search=vectorsearch_v1beta.SemanticSearch(
-                    search_text=query, search_field="content_embedding", task_type="QUESTION_ANSWERING", top_k=top_k, output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"])
-                )
-            ),
-            vectorsearch_v1beta.Search(
-                text_search=vectorsearch_v1beta.TextSearch(
-                    search_text=query, data_field_names=["title", "teaser", "content"], top_k=top_k, output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"])
-                )
-            ),
-        ],
-        combine=vectorsearch_v1beta.BatchSearchDataObjectsRequest.CombineResultsOptions(
-            ranker=vectorsearch_v1beta.Ranker(rrf=vectorsearch_v1beta.ReciprocalRankFusion(weights=[1.0, 1.0]))
-        ),
-    )
-    
-    try:
-        batch_results = data_search_client.batch_search_data_objects(batch_search_request)
-        if not batch_results.results: return "No archived articles found."
+    results = search_archive(query, top_k)
+    if not results:
+        return "No archived articles found."
         
-        output = ""
-        for result in batch_results.results[0].results:
-            data = result.data_object.data
-            output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
-        return output
-    except Exception as e:
-        return f"Archive search failed: {e}"
+    output = ""
+    for data in results:
+        output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
+    return output
+
 
 archive_reader_agent = Agent(
     name="archive_reader_agent",
@@ -353,7 +330,7 @@ async def main():
                         print(f"[{event.author}]: {part.text}")
 
         print(f"DEBUG Registry: {session_service.sessions}")
-        
+
         # 7. Retrieve the populated state AFTER execution completes
         current_session = await session_service.get_session(
             app_name=runner.app_name, user_id=user_id, session_id=session_id

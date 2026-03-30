@@ -11,12 +11,15 @@ help:
 	@echo "==============================================================================="
 	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
 	@echo "  make run-webapp     - Launch the AI Newsroom Web UI directly"
+	@echo "  make run-slides     - Launch the interactive Marimo Workshop Slideshow"
 	@echo "  make test           - Run unit and integration tests"
 	@echo "  make eval           - Run agent evaluation using ADK evalsets"
 	@echo "  make lint           - Run code quality checks"
 	@echo "  make deploy         - Deploy the agent remotely"
 	@echo "  make catchup        - Start over at the beginning of a specific module"
 	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
+	@echo "  make harvest        - Run the Vector Search News Harvester daemon"
+	@echo "  make vector-cli     - Run the Vector Search diagnostic CLI (Usage: make vector-cli ARGS=\"...\")"
 	@echo "==============================================================================="
 
 # ==============================================================================
@@ -51,6 +54,34 @@ run-webapp:
 	@echo "| 🌐 Open your browser to http://127.0.0.1:8510                               |"
 	@echo "==============================================================================="
 	uv run python webapp/app.py
+
+# Launch Marimo Slideshow
+run-slides:
+	@echo "==============================================================================="
+	@echo "| 📊 Starting the Workshop Slideshow...                                       |"
+	@echo "|                                                                             |"
+	@echo "| 🌐 Open your browser to http://localhost:2718                               |"
+	@echo "==============================================================================="
+	uv run marimo edit slides/workshop.py -p 2718 --headless --no-token
+
+# ==============================================================================
+# Ingestion & Harvester
+# ==============================================================================
+
+# Launch the Vector Search news harvester daemon
+harvest:
+	@echo "==============================================================================="
+	@echo "| 🚜 Starting the News Harvester & Vector Search Ingestion...                   |"
+	@echo "==============================================================================="
+	uv run python news_harvester/manager.py
+
+# Launch the Vector Search Administrative CLI
+# Usage: make vector-cli ARGS="list-objects --limit 5"
+vector-cli:
+	@echo "==============================================================================="
+	@echo "| 🔍 Launching Vector Search CLI...                                             |"
+	@echo "==============================================================================="
+	@uv run python scripts/vector_cli.py $(ARGS)
 # ==============================================================================
 # Backend Deployment Targets
 # ==============================================================================
