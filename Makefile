@@ -17,6 +17,7 @@ help:
 	@echo "  make lint           - Run code quality checks"
 	@echo "  make deploy         - Deploy the agent remotely"
 	@echo "  make catchup        - Start over at the beginning of a specific module"
+	@echo "  make solve          - Applies the solution of a module directly into the workspace"
 	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
 	@echo "  make harvest        - Run the Vector Search News Harvester daemon"
 	@echo "  make vector-cli     - Run the Vector Search diagnostic CLI (Usage: make vector-cli ARGS=\"...\")"
@@ -171,3 +172,8 @@ snapshot:
 # Usage: make catchup [module=02]
 catchup:
 	@bash scripts/catchup.sh "$(module)"
+
+# Applies the solution of a module directly into the workspace
+# Usage: make solve [module=02]
+solve:
+	@bash scripts/solve.sh "$(module)"

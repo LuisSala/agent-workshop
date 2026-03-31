@@ -126,6 +126,12 @@ def make_citations_callback(agent_name: str, output_key: str):
                 print(
                     f"[DEBUG] Dict citations overridden to array of length {len(state_val['citations'])}"
                 )
+            elif isinstance(state_val, str):
+                # Store citations explicitly as strongly typed dictionaries in a parallel state key
+                # We use .model_dump() to ensure JSON serializability for SqliteSessionService
+                citations_key = f"{output_key}_citations"
+                callback_context.state[citations_key] = [Citation(**c).model_dump() for c in citations]
+                print(f"[DEBUG] Stored {len(citations)} dictionary citations in parallel state key: {citations_key}")
 
     return extract_citations_callback
 
@@ -135,19 +141,22 @@ async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
     for i in range(100):
         key = f"article_{i}"
         val = callback_context.state.get(key)
+        
         if val is not None:
-            articles_data.append(val)
+            # Retrieve the parallel strongly-typed citation dicts
+            citations_dict = callback_context.state.get(f"{key}_citations", [])
+            
+            articles_data.append({
+                "content": val,
+                "citations": citations_dict
+            })
     import json
 
-    # Exclude Pydantic objects or dicts by coercing them uniformly
     serialized = []
     for art in articles_data:
-        if hasattr(art, "model_dump"):
-            serialized.append(art.model_dump())
-        elif hasattr(art, "dict"):
-            serialized.append(art.dict())
-        else:
-            serialized.append(art)
+        # art is now a dictionary containing "content" (str) and "citations" (List[dict])
+        serialized.append(art)
+        
     callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
 
 
@@ -163,9 +172,12 @@ planner_agent = Agent(
     Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
     Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
     Use `google_search` to execute a first pass to discover the most important beats.
+    
+    IMPORTANT: You must output ONLY a raw JSON array of strings containing the topics. Do not include markdown blocks, text, or the `TopicPlan` wrapper.
+    Example output exactly like this:
+    ["AI advancements in healthcare", "New open source foundation models", "Regulatory changes in EU AI Act"]
     """,
     tools=[google_search],
-    output_schema=TopicPlan,
     output_key="topic_plan",
 )
 
@@ -180,11 +192,10 @@ def create_research_agent(topic: str, index: int) -> Agent:
         The current date and time is: {get_current_server_time()}
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
-        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `ArticleDraft` schema.
-        Use `google_search` to gather factual information.
+        Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
+        Your final output must be in Markdown format. Use `google_search` to gather factual information.
         """,
         tools=[google_search],
-        output_schema=ArticleDraft,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -194,12 +205,26 @@ class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("topic_plan")
-        if not plan or not plan.get("topics"):
+        plan_raw = ctx.session.state.get("topic_plan")
+        if not plan_raw:
+            return
+
+        import json
+        import re
+        try:
+            # Strip potential markdown formatting
+            plan_str = plan_raw.strip().strip("```json").strip("```").strip()
+            # Use regex to find the first array structure in case the LLM added conversational filler
+            match = re.search(r'\[.*\]', plan_str, flags=re.DOTALL)
+            if match:
+                plan_str = match.group(0)
+            topics = json.loads(plan_str)
+        except json.JSONDecodeError:
+            print(f"Failed to parse topics from planner output: {plan_raw}")
             return
 
         researchers = [
-            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
+            create_research_agent(topic, i) for i, topic in enumerate(topics)
         ]
 
         parallel_runner = ParallelAgent(

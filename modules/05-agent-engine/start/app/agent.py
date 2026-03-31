@@ -1,3 +1,5 @@
+# MODULE 04-VECTOR-SEARCH: START
+
 import asyncio
 import datetime
 import json
@@ -17,11 +19,14 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from typing import AsyncGenerator
 
-from dotenv import load_dotenv, find_dotenv
 
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
 image_generation_model = "gemini-3.1-flash-image-preview"
+
+generate_content_config = types.GenerateContentConfig(
+    tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig())
+)
 
 # --- Structured Pydantic Schemas ---
 
@@ -124,6 +129,12 @@ def make_citations_callback(agent_name: str, output_key: str):
                 print(
                     f"[DEBUG] Dict citations overridden to array of length {len(state_val['citations'])}"
                 )
+            elif isinstance(state_val, str):
+                # Store citations explicitly as strongly typed dictionaries in a parallel state key
+                # We use .model_dump() to ensure JSON serializability for SqliteSessionService
+                citations_key = f"{output_key}_citations"
+                callback_context.state[citations_key] = [Citation(**c).model_dump() for c in citations]
+                print(f"[DEBUG] Stored {len(citations)} dictionary citations in parallel state key: {citations_key}")
 
     return extract_citations_callback
 
@@ -133,19 +144,22 @@ async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
     for i in range(100):
         key = f"article_{i}"
         val = callback_context.state.get(key)
+        
         if val is not None:
-            articles_data.append(val)
+            # Retrieve the parallel strongly-typed citation dicts
+            citations_dict = callback_context.state.get(f"{key}_citations", [])
+            
+            articles_data.append({
+                "content": val,
+                "citations": citations_dict
+            })
     import json
 
-    # Exclude Pydantic objects or dicts by coercing them uniformly
     serialized = []
     for art in articles_data:
-        if hasattr(art, "model_dump"):
-            serialized.append(art.model_dump())
-        elif hasattr(art, "dict"):
-            serialized.append(art.dict())
-        else:
-            serialized.append(art)
+        # art is now a dictionary containing "content" (str) and "citations" (List[dict])
+        serialized.append(art)
+        
     callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
 
 
@@ -158,12 +172,15 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
+    Given a broad news request from the user, generate a structured plan of at least 3 specific topics or "beats" to assign to your research team.
     Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
-    Use `google_search` to execute a first pass to discover the most important beats.
+    Use Google Search to execute a first pass to discover the most important beats.
+    
+    IMPORTANT: You must output ONLY a raw JSON array of strings containing the topics. Do not include markdown blocks, text, or the `TopicPlan` wrapper.
+    Example output exactly like this:
+    ["AI advancements in healthcare", "New open source foundation models", "Regulatory changes in EU AI Act"]
     """,
     tools=[google_search],
-    output_schema=TopicPlan,
     output_key="topic_plan",
 )
 
@@ -178,11 +195,10 @@ def create_research_agent(topic: str, index: int) -> Agent:
         The current date and time is: {get_current_server_time()}
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
-        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `ArticleDraft` schema.
-        Use `google_search` to gather factual information.
+        Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
+        Your final output must be in Markdown format. Use Google Search to gather factual information.
         """,
         tools=[google_search],
-        output_schema=ArticleDraft,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
@@ -192,12 +208,26 @@ class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("topic_plan")
-        if not plan or not plan.get("topics"):
+        plan_raw = ctx.session.state.get("topic_plan")
+        if not plan_raw:
+            return
+
+        import json
+        import re
+        try:
+            # Strip potential markdown formatting
+            plan_str = plan_raw.strip().strip("```json").strip("```").strip()
+            # Use regex to find the first array structure in case the LLM added conversational filler
+            match = re.search(r'\[.*\]', plan_str, flags=re.DOTALL)
+            if match:
+                plan_str = match.group(0)
+            topics = json.loads(plan_str)
+        except json.JSONDecodeError:
+            print(f"Failed to parse topics from planner output: {plan_raw}")
             return
 
         researchers = [
-            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
+            create_research_agent(topic, i) for i, topic in enumerate(topics)
         ]
 
         parallel_runner = ParallelAgent(
@@ -236,50 +266,14 @@ news_pipeline = SequentialAgent(
     sub_agents=[planner_agent, research_team, compiler_agent],
 )
 
-
-def search_news_archive(query: str, top_k: int = 5) -> str:
-    """
-    Search for existing, previously generated or accumulated news articles.
-    Provides historical context on topics that have already been covered.
-    """
-    import sys, os
-
-    sys.path.append(
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    )
-    from utils.vector_store import search_archive
-
-    results = search_archive(query, top_k)
-    if not results:
-        return "No archived articles found."
-
-    output = ""
-    for data in results:
-        output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
-    return output
-
-
-archive_reader_agent = Agent(
-    name="archive_reader_agent",
-    model=worker_model,
-    instruction=f"""
-    The current date and time is: {get_current_server_time()}
-    You are an archival librarian answering questions using past editions of the newspaper.
-    Always search the archive using `search_news_archive`. Summarize the findings accurately.
-    """,
-    tools=[search_news_archive],
-)
-
 root_agent = Agent(
     name="root_agent",
     model=worker_model,
     instruction="""
-    You are a helpful, conversational AI. 
-    - If the user explicitly asks about past, historical, or previously covered topics, delegate to `archive_reader_agent`.
-    - If the user asks you to look up fresh or current news to write a new article, delegate to `news_pipeline`.
-    - Otherwise, answer the user's query directly.
+    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
+    whenever a user asks you to look up news; otherwise, answer the user's query directly.
     """,
-    sub_agents=[news_pipeline, archive_reader_agent],
+    sub_agents=[news_pipeline],
 )
 
 app = App(
@@ -289,11 +283,14 @@ app = App(
 
 
 async def main():
+    from dotenv import load_dotenv, find_dotenv
     load_dotenv(find_dotenv())
-
-    _, project_id = google.auth.default()
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("PROJECT_ID", project_id)
-    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION", "global")
+    
+    print("Starting pipeline execution...")
+    
+    project_id = os.environ.get("PROJECT_ID", "luissala-vertex-sandbox")
+    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
     # 1. Define Unique Identifiers
@@ -320,9 +317,7 @@ async def main():
         user_message = types.Content(role="user", parts=[types.Part(text=query)])
 
         print(f"Running query: {query}")
-        print(
-            "Executing ADK pipeline... (this may take up to 60 seconds for parallel searches)"
-        )
+        print("Executing ADK pipeline... (this may take several minutes)")
 
         # 6. Execute the runner
         async for event in runner.run_async(
