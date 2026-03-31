@@ -301,13 +301,18 @@ def search_news_archive(query: str, top_k: int = 5) -> str:
 
 archive_reader_agent = Agent(
     name="archive_reader_agent",
-    model=worker_model,
+    model=pro_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
     You are an archival librarian answering questions using past editions of the newspaper.
-    Always search the archive using `search_news_archive`. Summarize the findings accurately.
+    Always search the archive using `search_news_archive`.
+    You must output your findings formatted strictly as a NewspaperPage containing multiple Article objects.
+    Each article should have a title, an engaging teaser, and the full content body formatted in Markdown. 
+    Use the findings from the archive to construct these articles. Ensure the 'citations' array is left empty since this is an archive compilation.
     """,
     tools=[search_news_archive],
+    output_schema=NewspaperPage,
+    output_key="compiled_news",
 )
 
 root_agent = Agent(

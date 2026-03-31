@@ -6,7 +6,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const queryInput = document.getElementById("query-input");
-    const searchBtn = document.getElementById("search-btn");
+    const liveSearchBtn = document.getElementById("live-search-btn");
+    const archiveSearchBtn = document.getElementById("archive-search-btn");
+    
+    const navQueryInput = document.getElementById("nav-query-input");
+    const newSearchBtn = document.getElementById("new-search-btn");
+    const navArchiveSearchBtn = document.getElementById("nav-archive-search-btn");
     const termOutput = document.getElementById("terminal-output");
     const grid = document.getElementById("article-grid");
     
@@ -28,14 +33,14 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.abs(hash);
     }
 
-    searchBtn.addEventListener("click", () => {
-        const query = queryInput.value.trim();
-        if (!query) return;
+    function triggerSearch(prefix, queryValue) {
+        if (!queryValue) return;
 
         showScreen("terminal");
         termOutput.innerHTML = "";
         
-        const evtSource = new EventSource(`/stream?query=${encodeURIComponent(query)}`);
+        const fullQuery = prefix + queryValue;
+        const evtSource = new EventSource(`/stream?query=${encodeURIComponent(fullQuery)}`);
         
         evtSource.onmessage = (e) => {
             const payload = JSON.parse(e.data);
@@ -70,16 +75,36 @@ document.addEventListener("DOMContentLoaded", () => {
                 termOutput.appendChild(err);
             }
         };
-    });
+    }
 
-    // Enter key submits
+    liveSearchBtn.addEventListener("click", () => triggerSearch("Look up fresh news about: ", queryInput.value.trim()));
+    archiveSearchBtn.addEventListener("click", () => triggerSearch("Search the archive for past news on: ", queryInput.value.trim()));
+
+    // Enter key submits (default to live search)
     queryInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") searchBtn.click();
+        if (e.key === "Enter") liveSearchBtn.click();
     });
 
-    document.getElementById("new-search-btn").addEventListener("click", () => {
-        queryInput.value = "";
-        showScreen("input");
+    // Nav Header Listeners
+    newSearchBtn.addEventListener("click", () => {
+        let q = navQueryInput.value.trim();
+        if (!q) {
+            queryInput.value = "";
+            showScreen("input");
+        } else {
+            triggerSearch("Look up fresh news about: ", q);
+        }
+    });
+
+    navArchiveSearchBtn.addEventListener("click", () => {
+        let q = navQueryInput.value.trim();
+        if (q) {
+            triggerSearch("Search the archive for past news on: ", q);
+        }
+    });
+
+    navQueryInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") newSearchBtn.click();
     });
 
     function renderNews(data) {
