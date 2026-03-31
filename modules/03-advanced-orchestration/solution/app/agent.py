@@ -213,9 +213,14 @@ class ParallelResearcherFactory(BaseAgent):
             return
 
         import json
+        import re
         try:
-            # Strip potential markdown formatting if the LLM adds it anyway
+            # Strip potential markdown formatting
             plan_str = plan_raw.strip().strip("```json").strip("```").strip()
+            # Use regex to find the first array structure in case the LLM added conversational filler
+            match = re.search(r'\[.*\]', plan_str, flags=re.DOTALL)
+            if match:
+                plan_str = match.group(0)
             topics = json.loads(plan_str)
         except json.JSONDecodeError:
             print(f"Failed to parse topics from planner output: {plan_raw}")
