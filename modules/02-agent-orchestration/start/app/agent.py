@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# MODULE 02-AGENT-ORCHESTRATION: START
+
 import datetime
 from zoneinfo import ZoneInfo
 
@@ -23,14 +25,6 @@ from google.genai import types
 
 import os
 import random
-
-import google.auth
-
-
-_, project_id = google.auth.default()
-os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 
 def get_weather(city: str) -> str:

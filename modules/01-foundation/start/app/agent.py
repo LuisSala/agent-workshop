@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# MODULE 01-FOUNDATION: START
+
 import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,13 +24,6 @@ from google.adk.models import Gemini
 from google.genai import types
 
 import os
-import google.auth
-
-_, project_id = google.auth.default()
-os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
-
 
 # TODO: Add a tool that returns random temperature and weather conditions for a given city.
 # Hint: Import and use the `random` module to select random weather conditions from a list of possible conditions.

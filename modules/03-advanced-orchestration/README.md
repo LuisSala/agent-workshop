@@ -56,11 +56,6 @@ class NewspaperPage(BaseModel):
     articles: list[Article] = Field(
         description="Collection of articles for the front page"
     )
-
-class TopicPlan(BaseModel):
-    topics: list[str] = Field(
-        description="A list of specific beats or topics to investigate."
-    )
 ```
 </details>
 
@@ -100,6 +95,12 @@ def make_citations_callback(agent_name: str, output_key: str):
                 state_val.citations = [Citation(**c) for c in citations]
             elif isinstance(state_val, dict):
                 state_val["citations"] = citations
+            elif isinstance(state_val, str):
+                # Workaround for the Gemini SDK 400 Error when using tools + schemas:
+                # If the state_val is a str (raw markdown instead of Pydantic object),
+                # Store citations explicitly as a JSON-serializable dict in a parallel state key.
+                citations_key = f"{output_key}_citations"
+                callback_context.state[citations_key] = [Citation(**c).model_dump() for c in citations]
 
     return extract_citations_callback
 
@@ -108,19 +109,22 @@ async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
     for i in range(100):
         key = f"article_{i}"
         val = callback_context.state.get(key)
+        
         if val is not None:
-            articles_data.append(val)
+            # Retrieve the parallel strongly-typed citation dicts
+            citations_dict = callback_context.state.get(f"{key}_citations", [])
+            
+            articles_data.append({
+                "content": val,
+                "citations": citations_dict
+            })
     import json
 
-    # Exclude Pydantic objects or dicts by coercing them uniformly
     serialized = []
     for art in articles_data:
-        if hasattr(art, "model_dump"):
-            serialized.append(art.model_dump())
-        elif hasattr(art, "dict"):
-            serialized.append(art.dict())
-        else:
-            serialized.append(art)
+        # art is now a dictionary containing "content" (str) and "citations" (List[dict])
+        serialized.append(art)
+        
     callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
 ```
 </details>
@@ -146,33 +150,49 @@ def create_research_agent(topic: str, index: int) -> Agent:
         The current date and time is: {{get_current_server_time()}}
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
-        Draft a high-quality, engaging article about your findings. Your final output must strictly follow the `ArticleDraft` schema.
-        Use `google_search` to gather factual information.
+        Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
+        Your final output must be in Markdown format. Use Google Search to gather factual information.
         """,
         tools=[google_search],
-        output_schema=ArticleDraft,
         output_key=out_key,
         after_agent_callback=make_citations_callback(agent_name, out_key),
     )
 
 class ParallelResearcherFactory(BaseAgent):
     async def _run_async_impl(
-        self, ctx: InvocationContext
+        self, event: Event, callback_context: CallbackContext, invocation_context: InvocationContext
     ) -> AsyncGenerator[Event, None]:
-        plan = ctx.session.state.get("topic_plan")
-        if not plan or not plan.get("topics"):
+        
+        # We need to manually parse the raw output string from the planner_agent
+        topic_plan_raw = ""
+        topic_plan_state = callback_context.state.get("topic_plan")
+        if topic_plan_state:
+            if isinstance(topic_plan_state, str):
+                topic_plan_raw = topic_plan_state
+            elif isinstance(topic_plan_state, dict):
+                topic_plan_raw = topic_plan_state.get("topics", "[]")
+
+        import json
+        try:
+            topics = json.loads(topic_plan_raw)
+            if not isinstance(topics, list):
+                topics = []
+        except json.JSONDecodeError:
+            topics = []
+
+        if not topics:
             return
 
         researchers = [
-            create_research_agent(topic, i) for i, topic in enumerate(plan["topics"])
+            create_research_agent(topic, i) for i, topic in enumerate(topics)
         ]
 
         parallel_runner = ParallelAgent(
             name="parallel_research_executor", sub_agents=researchers
         )
 
-        async for event in parallel_runner.run_async(ctx):
-            yield event
+        async for child_event in parallel_runner.run_async(invocation_context):
+            yield child_event
 
 research_team = ParallelResearcherFactory(name="research_team")
 ```
@@ -262,7 +282,8 @@ This is the power of the ADK Callback system: it allows you to blend the creativ
 ## Your Objectives
 
 ### 1. Build the Editor-in-Chief (Planner Agent)
-Now that you have the supporting pieces, define `planner_agent` to take a broad user query and configure the `TopicPlan` schema! Guarantee it outputs to `output_key="topic_plan"`. 
+Now that you have the supporting pieces, define `planner_agent` to take a broad user query and output a plan! To bypass an API error where Gemini refuses to run tool functions against strict output formats, we must write prompts that enforce format structure manually.
+Guarantee it outputs a **pure JSON array** of strings (e.g. `["Topic 1", "Topic 2"]`) and assign it to `output_key="topic_plan"`.
 
 ### 2. Build the Compiler 
 Create the `compiler_agent`. Make sure it reads the results produced by the `research_team` via `{draft_articles}` and outputs to the `NewspaperPage` schema using `output_key="compiled_news"`. 

@@ -1,3 +1,5 @@
+# MODULE 03-ADVANCED-ORCHESTRATION: START
+
 import datetime
 import os
 import google.auth
@@ -8,10 +10,6 @@ from google.adk.apps import App
 from google.adk.tools import AgentTool
 from google.adk.tools import google_search
 
-_, project_id = google.auth.default()
-os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
