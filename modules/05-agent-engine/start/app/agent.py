@@ -1,4 +1,4 @@
-# MODULE 04-VECTOR-SEARCH: START
+# MODULE 04-VECTOR-SEARCH: SOLUTION
 
 import asyncio
 import datetime
@@ -19,14 +19,24 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from typing import AsyncGenerator
 
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
+
+try:
+    project_id = os.environ.get("PROJECT_ID")
+    if not project_id:
+        _, project_id = google.auth.default()
+        
+    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("PROJECT_ID", project_id)
+    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION", "global")
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+except Exception as e:
+    print(f"Warning: Could not configure Vertex AI Auth natively: {e}")
 
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
 image_generation_model = "gemini-3.1-flash-image-preview"
-
-generate_content_config = types.GenerateContentConfig(
-    tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig())
-)
 
 # --- Structured Pydantic Schemas ---
 
@@ -172,9 +182,9 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news request from the user, generate a structured plan of at least 3 specific topics or "beats" to assign to your research team.
+    Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
     Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
-    Use Google Search to execute a first pass to discover the most important beats.
+    Use `google_search` to execute a first pass to discover the most important beats.
     
     IMPORTANT: You must output ONLY a raw JSON array of strings containing the topics. Do not include markdown blocks, text, or the `TopicPlan` wrapper.
     Example output exactly like this:
@@ -196,7 +206,7 @@ def create_research_agent(topic: str, index: int) -> Agent:
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
         Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
-        Your final output must be in Markdown format. Use Google Search to gather factual information.
+        Your final output must be in Markdown format. Use `google_search` to gather factual information.
         """,
         tools=[google_search],
         output_key=out_key,
@@ -266,14 +276,50 @@ news_pipeline = SequentialAgent(
     sub_agents=[planner_agent, research_team, compiler_agent],
 )
 
+
+def search_news_archive(query: str, top_k: int = 5) -> str:
+    """
+    Search for existing, previously generated or accumulated news articles.
+    Provides historical context on topics that have already been covered.
+    """
+    import sys, os
+
+    sys.path.append(
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    )
+    from utils.vector_store import search_archive
+
+    results = search_archive(query, top_k)
+    if not results:
+        return "No archived articles found."
+
+    output = ""
+    for data in results:
+        output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
+    return output
+
+
+archive_reader_agent = Agent(
+    name="archive_reader_agent",
+    model=worker_model,
+    instruction=f"""
+    The current date and time is: {get_current_server_time()}
+    You are an archival librarian answering questions using past editions of the newspaper.
+    Always search the archive using `search_news_archive`. Summarize the findings accurately.
+    """,
+    tools=[search_news_archive],
+)
+
 root_agent = Agent(
     name="root_agent",
     model=worker_model,
     instruction="""
-    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
-    whenever a user asks you to look up news; otherwise, answer the user's query directly.
+    You are a helpful, conversational AI. 
+    - If the user explicitly asks about past, historical, or previously covered topics, delegate to `archive_reader_agent`.
+    - If the user asks you to look up fresh or current news, delegate to `news_pipeline`.
+    - Otherwise, answer the user's query directly.
     """,
-    sub_agents=[news_pipeline],
+    sub_agents=[news_pipeline, archive_reader_agent],
 )
 
 app = App(
@@ -283,16 +329,6 @@ app = App(
 
 
 async def main():
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
-    
-    print("Starting pipeline execution...")
-    
-    project_id = os.environ.get("PROJECT_ID", "luissala-vertex-sandbox")
-    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
-
     # 1. Define Unique Identifiers
     session_id = "test_pipeline"
     user_id = "test_user"
@@ -317,7 +353,9 @@ async def main():
         user_message = types.Content(role="user", parts=[types.Part(text=query)])
 
         print(f"Running query: {query}")
-        print("Executing ADK pipeline... (this may take several minutes)")
+        print(
+            "Executing ADK pipeline... (this may take up to 60 seconds for parallel searches)"
+        )
 
         # 6. Execute the runner
         async for event in runner.run_async(

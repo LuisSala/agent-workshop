@@ -50,8 +50,17 @@ document.addEventListener("DOMContentLoaded", () => {
             } 
             else if (payload.type === "finish") {
                 evtSource.close();
-                renderNews(payload.data);
-                setTimeout(() => showScreen("news"), 800);
+                if (payload.data && payload.data.articles && payload.data.articles.length > 0) {
+                    renderNews(payload.data);
+                    setTimeout(() => showScreen("news"), 800);
+                } else {
+                    const line = document.createElement("div");
+                    line.className = "term-line";
+                    line.style.color = "#4ade80";
+                    line.innerHTML = `<span class="term-author">[system]</span> Agent finished executing. See terminal output above.`;
+                    termOutput.appendChild(line);
+                    termOutput.scrollTop = termOutput.scrollHeight;
+                }
             }
             else if (payload.type === "error") {
                 evtSource.close();

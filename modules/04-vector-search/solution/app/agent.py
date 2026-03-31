@@ -21,6 +21,19 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv, find_dotenv
 
+load_dotenv(find_dotenv())
+
+try:
+    project_id = os.environ.get("PROJECT_ID")
+    if not project_id:
+        _, project_id = google.auth.default()
+        
+    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("PROJECT_ID", project_id)
+    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION", "global")
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+except Exception as e:
+    print(f"Warning: Could not configure Vertex AI Auth natively: {e}")
+
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
 image_generation_model = "gemini-3.1-flash-image-preview"
@@ -303,7 +316,7 @@ root_agent = Agent(
     instruction="""
     You are a helpful, conversational AI. 
     - If the user explicitly asks about past, historical, or previously covered topics, delegate to `archive_reader_agent`.
-    - If the user asks you to look up fresh or current news to write a new article, delegate to `news_pipeline`.
+    - If the user asks you to look up fresh or current news, delegate to `news_pipeline`.
     - Otherwise, answer the user's query directly.
     """,
     sub_agents=[news_pipeline, archive_reader_agent],
@@ -316,13 +329,6 @@ app = App(
 
 
 async def main():
-    load_dotenv(find_dotenv())
-
-    _, project_id = google.auth.default()
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("PROJECT_ID", project_id)
-    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION", "global")
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
-
     # 1. Define Unique Identifiers
     session_id = "test_pipeline"
     user_id = "test_user"
