@@ -277,7 +277,7 @@ news_pipeline = SequentialAgent(
 )
 
 
-def search_news_archive(query: str, top_k: int = 5) -> str:
+def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
     """
     Search for existing, previously generated or accumulated news articles.
     Provides historical context on topics that have already been covered.
@@ -291,23 +291,25 @@ def search_news_archive(query: str, top_k: int = 5) -> str:
 
     results = search_archive(query, top_k)
     if not results:
-        return "No archived articles found."
+        return [{"status": "success", "results": "No archived articles found."}]
 
-    output = ""
-    for data in results:
-        output += f"Title: {data.get('title')}\nTeaser: {data.get('teaser')}\nContent: {data.get('content')}\n---\n"
-    return output
+    return results
 
 
 archive_reader_agent = Agent(
     name="archive_reader_agent",
-    model=worker_model,
+    model=pro_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
     You are an archival librarian answering questions using past editions of the newspaper.
-    Always search the archive using `search_news_archive`. Summarize the findings accurately.
+    Always search the archive using `search_news_archive`.
+    You must output your findings formatted strictly as a NewspaperPage containing multiple Article objects.
+    Each article should have a title, an engaging teaser, and the full content body formatted in Markdown. 
+    Use the findings from the archive to construct these articles. Strictly preserve and populate the original 'citations' array from your search results into the final schema.
     """,
     tools=[search_news_archive],
+    output_schema=NewspaperPage,
+    output_key="compiled_news",
 )
 
 root_agent = Agent(

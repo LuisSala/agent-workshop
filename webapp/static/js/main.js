@@ -22,6 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
     function showScreen(name) {
         Object.values(screens).forEach(s => s.classList.remove("active"));
         screens[name].classList.add("active");
+        if (name === "input") {
+            fetchHistory();
+        }
     }
 
     // Pseudo-random hash for placeholder images to keep them visually locked per article
@@ -158,4 +161,56 @@ document.addEventListener("DOMContentLoaded", () => {
 
     closeBtn.onclick = () => modal.style.display = "none";
     window.onclick = (e) => { if (e.target == modal) modal.style.display = "none"; }
+
+    // --- History Logic ---
+    const historyList = document.getElementById("history-list");
+
+    function fetchHistory() {
+        if (!historyList) return;
+        fetch("/api/history")
+            .then(res => res.json())
+            .then(data => {
+                historyList.innerHTML = "";
+                if (data.length === 0) {
+                    historyList.innerHTML = "<li style='color:#777; font-size:0.9rem;'>No previous newsletters found.</li>";
+                    return;
+                }
+                data.forEach(item => {
+                    const li = document.createElement("li");
+                    const dateStr = new Date(item.timestamp * 1000).toLocaleString();
+                    const cleanQuery = item.query.replace('Look up fresh news about: ', '').replace('Search the archive for past news on: ', '');
+                    li.innerHTML = `<a href="#" data-id="${item.id}" style="color: #60a5fa; text-decoration: none; font-size: 0.95rem;">${cleanQuery}</a>
+                                    <span style="color:#666; font-size: 0.8rem; margin-left:10px;">${dateStr}</span>`;
+                    
+                    li.querySelector("a").addEventListener("click", (e) => {
+                        e.preventDefault();
+                        loadHistory(item.id);
+                    });
+                    historyList.appendChild(li);
+                });
+            })
+            .catch(err => console.error("Error fetching history:", err));
+    }
+
+    function loadHistory(id) {
+        showScreen("terminal");
+        termOutput.innerHTML = `<div class="term-line" style="color: #4ade80;"><span class="term-author">[system]</span> Loading cached newsletter...</div>`;
+        
+        fetch(`/api/history/${id}`)
+            .then(res => res.json())
+            .then(payload => {
+                if (payload && payload.data) {
+                    renderNews(payload.data);
+                    setTimeout(() => showScreen("news"), 500);
+                } else {
+                    termOutput.innerHTML += `<div class="term-line" style="color: red;">Failed to parse cached data.</div>`;
+                }
+            })
+            .catch(err => {
+                termOutput.innerHTML += `<div class="term-line" style="color: red;">Error: ${err.message}</div>`;
+            });
+    }
+
+    // Call fetchHistory initially
+    fetchHistory();
 });

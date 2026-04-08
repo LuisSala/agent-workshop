@@ -20,11 +20,11 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "newsletters")
+os.makedirs(DATA_DIR, exist_ok=True)
+
 app = Flask(__name__)
 session_service = InMemorySessionService()
-runner = Runner(
-    app_name="newsroom_ui", agent=root_agent, session_service=session_service
-)
 
 
 def run_agent_in_thread(query: str, session_id: str, q: queue.Queue):
@@ -32,6 +32,12 @@ def run_agent_in_thread(query: str, session_id: str, q: queue.Queue):
         await session_service.create_session(
             app_name="newsroom_ui", user_id="demo_user", session_id=session_id
         )
+        
+        # Instantiate runner per-thread to prevent async global state conflicts
+        runner = Runner(
+            app_name="newsroom_ui", agent=root_agent, session_service=session_service
+        )
+        
         msg = types.Content(role="user", parts=[types.Part(text=query)])
 
         try:
@@ -66,7 +72,6 @@ def run_agent_in_thread(query: str, session_id: str, q: queue.Queue):
             )
             compiled = session.state.get("compiled_news", {})
 
-            # Extract JSON from Pydantic model
             if hasattr(compiled, "model_dump"):
                 compiled_data = compiled.model_dump()
             elif hasattr(compiled, "dict"):
@@ -74,9 +79,38 @@ def run_agent_in_thread(query: str, session_id: str, q: queue.Queue):
             else:
                 compiled_data = compiled
 
+            if compiled_data and "articles" in compiled_data and compiled_data["articles"]:
+                import time, uuid
+                filename = f"{uuid.uuid4()}.json"
+                file_path = os.path.join(DATA_DIR, filename)
+                with open(file_path, "w") as f:
+                    json.dump({
+                        "id": filename,
+                        "query": query,
+                        "timestamp": time.time(),
+                        "data": compiled_data
+                    }, f)
+
             q.put({"type": "finish", "data": compiled_data})
         except Exception as e:
-            q.put({"type": "error", "message": str(e)})
+            import traceback
+            traceback.print_exc()
+            
+            # Extract nested exceptions from ExceptionGroup
+            if hasattr(e, 'exceptions'):
+                def get_all_msgs(exc):
+                    msgs = []
+                    if hasattr(exc, 'exceptions'):
+                        for sub_exc in exc.exceptions:
+                            msgs.extend(get_all_msgs(sub_exc))
+                    else:
+                        msgs.append(str(exc))
+                    return msgs
+                
+                msg = "; ".join(get_all_msgs(e))
+                q.put({"type": "error", "message": "Parallel Execution Failed: " + msg})
+            else:
+                q.put({"type": "error", "message": str(e)})
 
     asyncio.run(_run())
 
@@ -106,6 +140,36 @@ def stream():
                 break
 
     return Response(generate(), mimetype="text/event-stream")
+
+
+@app.route("/api/history")
+def get_history():
+    history = []
+    if os.path.exists(DATA_DIR):
+        for filename in os.listdir(DATA_DIR):
+            if filename.endswith(".json"):
+                try:
+                    with open(os.path.join(DATA_DIR, filename), "r") as f:
+                        data = json.load(f)
+                        history.append({
+                            "id": data.get("id"),
+                            "query": data.get("query"),
+                            "timestamp": data.get("timestamp", 0)
+                        })
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    # Sort by timestamp descending
+    history.sort(key=lambda x: x["timestamp"], reverse=True)
+    return Response(json.dumps(history), mimetype="application/json")
+
+
+@app.route("/api/history/<file_id>")
+def get_history_item(file_id):
+    file_path = os.path.join(DATA_DIR, file_id)
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return Response(f.read(), mimetype="application/json")
+    return Response("Not found", status=404)
 
 
 if __name__ == "__main__":
