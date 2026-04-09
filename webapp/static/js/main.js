@@ -151,10 +151,12 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-sources").innerText = `✦ SYNTHESIZED FROM ${sourceCount} SOURCES IN REAL-TIME`;
         document.getElementById("modal-body").innerHTML = marked.parse(article.content);
         
+        const searchChipHtml = article.search_entry_point_html ? `<h3>Suggested Searches</h3><div class="search-entry-point" style="margin-bottom: 20px;">${article.search_entry_point_html}</div>` : "";
+
         const citationsHtml = (article.citations && article.citations.length > 0) 
             ? "<h3>Sources</h3><ul>" + article.citations.map(c => `<li><a href="${c.url}" target="_blank">${c.title}</a></li>`).join("") + "</ul>"
             : "";
-        document.getElementById("modal-citations").innerHTML = citationsHtml;
+        document.getElementById("modal-citations").innerHTML = searchChipHtml + citationsHtml;
         
         modal.style.display = "block";
     }

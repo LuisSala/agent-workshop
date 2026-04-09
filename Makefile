@@ -54,7 +54,7 @@ run-webapp:
 	@echo "|                                                                             |"
 	@echo "| 🌐 Open your browser to http://127.0.0.1:8510                               |"
 	@echo "==============================================================================="
-	uv run python webapp/app.py
+	uv run --no-sync python webapp/app.py
 
 # Launch Marimo Slideshow
 run-slides:

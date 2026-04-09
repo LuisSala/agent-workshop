@@ -17,7 +17,7 @@ from google.adk.tools import google_search
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -58,6 +58,7 @@ class ArticleDraft(BaseModel):
 
 class Article(ArticleDraft):
     citations: list[Citation] = Field(description="Sources used in this article")
+    search_entry_point_html: Optional[str] = Field(default=None, description="HTML for the Google Search Suggestion chip")
 
 
 class NewspaperPage(BaseModel):
@@ -101,6 +102,7 @@ def make_citations_callback(agent_name: str, output_key: str):
         session = callback_context._invocation_context.session
         citations = []
         seen_urls = set()
+        rendered_content = None
 
         # Traverse events in reverse to find the latest grounding chunks for this agent
         for event in reversed(session.events):
@@ -120,6 +122,11 @@ def make_citations_callback(agent_name: str, output_key: str):
                             "url": chunk.web.uri,
                         }
                     )
+            
+            search_entry_point = getattr(event.grounding_metadata, "search_entry_point", None)
+            if search_entry_point:
+                rendered_content = getattr(search_entry_point, "rendered_content", None)
+                
             break  # Only process the final response
 
         # Inject the deterministic citations into the structured state!
@@ -144,6 +151,9 @@ def make_citations_callback(agent_name: str, output_key: str):
                 # We use .model_dump() to ensure JSON serializability for SqliteSessionService
                 citations_key = f"{output_key}_citations"
                 callback_context.state[citations_key] = [Citation(**c).model_dump() for c in citations]
+                search_entry_key = f"{output_key}_search_entry_point_html"
+                if rendered_content:
+                    callback_context.state[search_entry_key] = rendered_content
                 print(f"[DEBUG] Stored {len(citations)} dictionary citations in parallel state key: {citations_key}")
 
     return extract_citations_callback
@@ -158,10 +168,12 @@ async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
         if val is not None:
             # Retrieve the parallel strongly-typed citation dicts
             citations_dict = callback_context.state.get(f"{key}_citations", [])
+            search_entry_html = callback_context.state.get(f"{key}_search_entry_point_html", None)
             
             articles_data.append({
                 "content": val,
-                "citations": citations_dict
+                "citations": citations_dict,
+                "search_entry_point_html": search_entry_html
             })
     import json
 
@@ -182,9 +194,9 @@ planner_agent = Agent(
     The current date and time is: {get_current_server_time()}
 
     You are a senior news editor. 
-    Given a broad news request from the user, generate a structured plan of at least 10 specific topics or "beats" to assign to your research team.
+    Given a broad news request from the user, generate a structured plan of at least 2 specific topics or "beats" to assign to your research team.
     Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
-    Use `google_search` to execute a first pass to discover the most important beats.
+    Use Google Search to execute a first pass to discover the most important beats.
     
     IMPORTANT: You must output ONLY a raw JSON array of strings containing the topics. Do not include markdown blocks, text, or the `TopicPlan` wrapper.
     Example output exactly like this:
@@ -206,7 +218,7 @@ def create_research_agent(topic: str, index: int) -> Agent:
         
         You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
         Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
-        Your final output must be in Markdown format. Use `google_search` to gather factual information.
+        Your final output must be in Markdown format. Use Google Search to gather factual information.
         """,
         tools=[google_search],
         output_key=out_key,
@@ -263,7 +275,7 @@ compiler_agent = Agent(
 
     Read all of these drafted articles. Choose the best ones, drop or merge duplicates, evaluate them for quality, and compile them into a cohesive final `NewspaperPage`.
 
-    CRITICAL INSTRUCTION: You must strictly preserve the exact `citations` array provided for each article in the data above. If an article's `citations` array is empty `[]`, you MUST output an empty array for that article. DO NOT invent, hallucinate, or infer any URLs.
+    CRITICAL INSTRUCTION: You must strictly preserve the exact `citations` array and the exact `search_entry_point_html` value provided for each article in the data above. If an article's `citations` array is empty `[]`, you MUST output an empty array for that article. Do the same for `search_entry_point_html`. DO NOT invent, hallucinate, infer, edit, or modify any URLs or HTML text.
     """,
     output_schema=NewspaperPage,
     output_key="compiled_news",
