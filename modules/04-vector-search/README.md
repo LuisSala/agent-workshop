@@ -2,63 +2,37 @@
 
 In this module you will turn the Module 03 newsroom into a multi-purpose newsroom that **both** researches fresh news AND looks up archived stories from a Vertex AI Vector Search collection. You will:
 
-- Add a router that picks between the live-news pipeline and the archive lookup.
 - Build a Vector Search–backed tool and wire it into a librarian agent.
 - Force structured output so the archive UI renders correctly.
+- Define a **second** Workflow alongside mod03's news pipeline.
+- Embed both workflows behind an ADK `Runner` in a custom Flask UI; the UI picks which workflow to invoke per request.
 - Honor Google Search Grounding's display requirements end-to-end.
 
 > **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** ADK 2.0 is in **Beta**. APIs may shift before GA — see the [ADK 2.0 overview](https://adk.dev/2.0/) for stability caveats.
 
 ## Architecture
 
-```
-                                     +-> planner_agent --> research_orchestrator
-                                     |     (LlmAgent)        (@node, fan-out)        --> compiler_agent  ─► NewspaperPage
-                                     |                                                       (terminal: news)
-                            (route="news")
-                                     |
-       START --> router(@node) ─────-+
-                                     |
-                            (route="archive")
-                                     |
-                                     +-> archive_reader_agent ──────────────────────► NewspaperPage
-                                              (terminal: archive)
+```mermaid
+flowchart LR
+    subgraph news["news_workflow"]
+        S1([START]) --> P[planner_agent<br/>LlmAgent · TopicPlan]
+        P --> RO[research_orchestrator<br/>@node · asyncio.gather]
+        RO -->|N parallel| C[compiler_agent<br/>LlmAgent · NewspaperPage]
+    end
+    subgraph archive["archive_workflow"]
+        S2([START]) --> A[archive_reader_agent<br/>LlmAgent · search_news_archive<br/>NewspaperPage]
+    end
+    Webapp[webapp/app.py<br/>?mode=news|archive] -.->|picks one| news
+    Webapp -.->|picks one| archive
 ```
 
-Whichever branch the router picks runs to completion; that branch's terminal node output becomes the workflow output. There is no shared "compile both" step — the news path and the archive path are fully independent.
+Two **independent** workflows. The webapp's `/stream` route reads a `?mode=` query param (set by the UI button the user clicked) and instantiates a `Runner` with the chosen workflow. The agent layer no longer re-derives intent from the prompt.
+
+> **Why split rather than route inside one workflow?** The user's intent is already known at the UI layer (which button was clicked). Asking the agent to re-derive it via keyword matching was brittle: *"show me past articles"* vs *"show me articles about the past"* — a rule-based router can't tell them apart. App-level routing keeps each workflow single-purpose and independently testable. (If you want IN-AGENT routing instead, see ["Alternative: agent-level routing"](#alternative-agent-level-routing) below.)
 
 ## Your Objectives
 
-### 1. Build the router node
-
-A function `@node` is the simplest way to express "look at the user's prompt, decide where this should go." It receives the START event's `node_input` (a `types.Content` payload — see the [data handling guide](https://adk.dev/workflows/data-handling/)) and emits an `Event` whose `route` value tells the workflow which downstream edge to follow.
-
-```python
-from google.adk.events.event import Event
-from google.adk.workflow import node
-
-ARCHIVE_KEYWORDS = ("archive", "past", "historical", "previously", "earlier",
-                    "old", "from yesterday", "last week")
-
-def _user_text(node_input) -> str:
-    parts = getattr(node_input, "parts", None)
-    if parts:
-        return " ".join(p.text for p in parts if getattr(p, "text", None))
-    return str(node_input)
-
-@node
-def router(node_input):
-    text = _user_text(node_input).lower()
-    if any(k in text for k in ARCHIVE_KEYWORDS):
-        return Event(output=node_input, route="archive")
-    return Event(output=node_input, route="news")
-```
-
-The webapp's "Search Archives" button prepends `Search the archive for past news on:` to the query, so a literal keyword match suffices for the workshop. **For an LLM-driven router**, swap this `@node` for an `LlmAgent(output_schema=RouteDecision)` and follow it with a small `@node` that converts the LLM's dict into `Event(route=...)`. The edges below stay the same.
-
-📚 Routing API reference: [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/).
-
-### 2. Migrate the news pipeline to dynamic parallel research
+### 1. Migrate the news pipeline to dynamic parallel research
 
 Module 03 used a custom `BaseAgent` (`ParallelResearcherFactory`) plus regex JSON parsing to fan out to N research agents. In 2.0 that whole pattern collapses into a single function `@node` that returns `await asyncio.gather(*tasks)`:
 
@@ -99,8 +73,8 @@ async def research_orchestrator(ctx: Context, node_input: dict) -> list:
 Three details worth memorizing:
 
 1. **`rerun_on_resume=True` is required** on any node that calls `ctx.run_node`. Workflow's resume semantics need it to relaunch interrupted children. See [adk.dev/workflows/dynamic](https://adk.dev/workflows/dynamic/).
-2. **`ctx.run_node()` returns a coroutine** (not a result) — append to a list, then `asyncio.gather` to run them concurrently. The pattern is documented at [adk.dev/workflows/dynamic](https://adk.dev/workflows/dynamic/).
-3. **No more output_key dance** — the planner's `output_schema=TopicPlan` makes its output a `dict` that the orchestrator receives as `node_input` directly. See [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/).
+2. **`ctx.run_node()` returns a coroutine** (not a result) — append to a list, then `asyncio.gather` to run them concurrently.
+3. **No more output_key dance for intermediate nodes** — the planner's `output_schema=TopicPlan` makes its output a `dict` that the orchestrator receives as `node_input` directly. See [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/).
 
 #### A note on parallel citation attribution
 
@@ -108,7 +82,7 @@ All parallel `ctx.run_node` calls share **one** `session.events` list. Because P
 
 This is a deliberate teaching surface: real-world async agent systems trade attribution precision for throughput. The cleanest fix is a "verified URL pool" pattern (the orchestrator returns a shared pool alongside the drafts and the compiler attributes by content semantic relevance). It's out of scope for this workshop. See `utils/citations.py` for the long-form discussion.
 
-### 3. Build the Vector Search archive tool
+### 2. Build the Vector Search archive tool
 
 The vector store helpers live in [`utils/vector_store.py`](../../utils/vector_store.py); the agent only needs a thin wrapper that returns a friendly empty-result payload. Keeping the wrapper here (rather than directly using `search_archive`) lets students adjust the empty-state UX without touching the shared utility.
 
@@ -125,9 +99,9 @@ def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
 
 📚 [Vertex AI Vector Search overview](https://docs.cloud.google.com/vertex-ai/vector-search/overview) — embeddings, similarity search, and the GA managed service the workshop ingests into.
 
-### 4. Create the structured archive reader agent
+### 3. Create the structured archive reader agent
 
-A single `LlmAgent` equipped with the Vector Search tool and forced into the `NewspaperPage` schema. The `output_schema` guarantees the archive UI in the webapp renders correctly — the same React-style card components that mod03's compiler output drives.
+A single `LlmAgent` equipped with the Vector Search tool and forced into the `NewspaperPage` schema. The `output_schema` guarantees the archive UI in the webapp renders correctly — the same article-card components that the news compiler's output drives.
 
 ```python
 archive_reader_agent = LlmAgent(
@@ -146,32 +120,44 @@ archive_reader_agent = LlmAgent(
     """,
     tools=[search_news_archive],
     output_schema=NewspaperPage,
+    output_key="compiled_news",  # webapp reads this — see "Embedding a Runner"
 )
 ```
 
 > 💡 **Tool-skipping risk**: when an `LlmAgent` has both `tools=[…]` and `output_schema`, some models try to fill the schema directly without calling the tool. The strong "Always search the archive first using `search_news_archive`" lead in the instruction is what keeps this honest in practice — verified by browser test: titles emitted by the agent matched the Vector Search collection exactly. If you mutate the instruction and notice hallucinated articles instead, the cleanest fix is to split this single agent into a search-tool node followed by a format-to-schema node.
 
-### 5. Compose the top-level Workflow
+### 4. Define both Workflows side-by-side
 
-Conditional edges use a **`RoutingMap` dict** — a `{route_value: target_node}` mapping. The cheatsheet's `(source, target, "route")` 3-tuple form is **not supported** by the real Pydantic model (see [GEMINI.md → ADK 2.0 Cheatsheet Overrides](../../GEMINI.md)).
+Two top-level Workflows in the same module. `news_workflow` is the three-node pipeline you just upgraded; `archive_workflow` is a single-node Workflow wrapping the librarian. Both publish their final output to `session.state['compiled_news']` via `output_key`, so the webapp can read either one with the same code.
 
 ```python
 from google.adk.workflow import Workflow
+from google.adk.apps import App
 
-root_agent = Workflow(
+news_workflow = Workflow(
     name="news_workflow",
     edges=[
-        ("START", router),
-        (router, {"news": planner_agent, "archive": archive_reader_agent}),
+        ("START", planner_agent),
         (planner_agent, research_orchestrator),
         (research_orchestrator, compiler_agent),
     ],
 )
+
+archive_workflow = Workflow(
+    name="archive_workflow",
+    edges=[
+        ("START", archive_reader_agent),
+    ],
+)
+
+# ADK Web (`make playground`) only exposes one root_agent. Alias to news_workflow
+# for development convenience; the webapp picks workflows explicitly per request.
+root_agent = news_workflow
+
+app = App(root_agent=root_agent, name="app")
 ```
 
-When the router emits `route="news"`, the workflow follows the news pipeline to `compiler_agent`. When it emits `route="archive"`, the workflow follows the archive branch to `archive_reader_agent`. **Whichever terminal node runs, its output becomes the workflow output.**
-
-📚 [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/) for the canonical conditional-routing form.
+> ℹ️ **ADK Web only sees `root_agent`.** During development, `make playground` will run the news flow because `root_agent = news_workflow`. To inspect the archive flow interactively, use the AI Newsroom web app (`make run-webapp`) — or write a small CLI script that imports `archive_workflow` directly and calls `Runner` against it.
 
 ## Google Search Grounding compliance
 
@@ -187,30 +173,30 @@ If you ever modify the rendering path (e.g. switch the webapp from innerHTML to 
 This is the workshop's first encounter with the **AI Newsroom web app** — a Flask + Server-Sent-Events front-end that embeds an ADK `Runner` directly. In modules 1-3 you used `make playground` (ADK Web) to inspect agents during development; mod04 introduces the alternate path of shipping your agent inside your own UI.
 
 ```bash
-make run-webapp     # http://127.0.0.1:8510 — Flask UI with Search Archives button
+make run-webapp     # http://127.0.0.1:8510 — Flask UI with both buttons
 ```
 
-The "Search Archives" button at the top of the dashboard prepends "Search the archive for past news on:" to your query, which the router picks up via the `archive` keyword. A blank "Look up news" query is routed to the live-research path.
+The dashboard has two buttons. **Live Search** sends `?mode=news` and runs the news pipeline; **Search Archives** sends `?mode=archive` and runs the librarian. The user query goes to the chosen workflow's planner (or directly to the archive_reader) verbatim — no prefix-string trickery.
 
-You can still drive the agent from ADK Web or the CLI for development:
+You can still drive each workflow from ADK Web or the CLI for development:
 
 ```bash
-make playground                  # ADK Web on :8501
-uv run adk run workspace/app     # CLI runner — type your query and press Enter
+make playground                  # ADK Web on :8501 — runs news_workflow (the root_agent alias)
+uv run adk run workspace/app     # CLI runner — also news_workflow
 ```
 
 ## Embedding a Runner: how the AI Newsroom web app works
 
-ADK Web and `adk run` are great for debugging, but real applications usually need to drive the agent from inside a custom UI. This module's web app at [`webapp/app.py`](../../webapp/app.py) is a 175-line Flask example of that pattern. The key idea: **construct your own `Runner`, stream its events to the front-end, and read the final state out of the session yourself.**
+ADK Web and `adk run` are great for debugging, but real applications usually need to drive the agent from inside a custom UI. This module's web app at [`webapp/app.py`](../../webapp/app.py) is a ~190-line Flask example of that pattern. The key idea: **import the workflow(s), pick one per request, construct your own `Runner`, stream its events to the front-end, and read the final state out of the session yourself.**
 
 ### Architecture
 
 ```mermaid
 flowchart LR
-    Browser([Browser]) -->|GET /stream?query=…| Flask[Flask /stream]
+    Browser([Browser]) -->|GET /stream?mode=…&query=…| Flask[Flask /stream]
+    Flask -->|pick workflow<br/>from WORKFLOWS dict| WF{news_workflow<br/>or<br/>archive_workflow}
     Flask -->|Thread + asyncio| Runner[ADK Runner<br/>InMemorySessionService]
-    Runner -->|run_async| WF[news_workflow<br/>Workflow]
-    WF -->|events| Runner
+    WF --> Runner
     Runner -->|each event<br/>→ q.put| Q[(Thread queue)]
     Q -->|drain → SSE| Flask
     Flask -->|text/event-stream| Browser
@@ -221,27 +207,64 @@ flowchart LR
 
 ### Three contracts to memorize
 
-1. **The `Runner` is per-session.** [`webapp/app.py`](../../webapp/app.py) instantiates `Runner(app_name=…, agent=root_agent, session_service=session_service)` *inside the per-request worker thread* and calls `await session_service.create_session(...)` first. Reusing a Runner across concurrent requests would risk state collisions in the in-memory session service.
+1. **The `Runner` is per-session and per-workflow.** [`webapp/app.py`](../../webapp/app.py) defines `WORKFLOWS = {"news": news_workflow, "archive": archive_workflow}`, looks up the right Workflow for the request's `mode`, then instantiates `Runner(app_name=…, agent=workflow, session_service=session_service)` *inside the per-request worker thread*. Reusing a Runner across concurrent requests would risk state collisions in the in-memory session service.
 2. **Events stream out as the workflow runs.** The webapp iterates `async for event in runner.run_async(...)` and pushes each event onto a `queue.Queue`. A separate generator (the `/stream` route handler) drains the queue and emits Server-Sent Events to the browser, which renders them in the diagnostic event log. This is what lets students *see* the planner, then the parallel researchers, then the compiler arrive in real time.
-3. **The final result is read from session state, not from the event stream.** After `runner.run_async` returns, the webapp does `session = await session_service.get_session(...); compiled = session.state.get("compiled_news", {})`. **This is why `compiler_agent` and `archive_reader_agent` set `output_key="compiled_news"`** — without it the state lookup returns `{}` and the front-end can't render the grid.
+3. **The final result is read from session state, not from the event stream.** After `runner.run_async` returns, the webapp does `session = await session_service.get_session(...); compiled = session.state.get("compiled_news", {})`. **This is why both `compiler_agent` and `archive_reader_agent` set `output_key="compiled_news"`** — without it the state lookup returns `{}` and the front-end can't render the grid.
 
 ### The front-end side
 
 [`webapp/static/js/main.js`](../../webapp/static/js/main.js) is the browser companion. Three things worth knowing:
 
-- It opens an `EventSource` to `/stream?query=...` and renders each `event` payload as a line in the diagnostic log (HTML-escaped, so the chip's SVG doesn't try to render twice).
-- When the `finish` payload arrives, it transitions to the rendered article grid by calling `renderNews(payload.data)`.
-- In the article modal, `article.search_entry_point_html` is written via `innerHTML` so the chip's inline `@media(prefers-color-scheme)` styles render unmodified — required by the [Google Search Grounding display terms](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search).
+- Each button passes `mode="news"` or `mode="archive"` to a single `triggerSearch(mode, query)` helper that opens an `EventSource` against `/stream?mode=…&query=…`.
+- Each `event` payload from SSE renders as a line in the diagnostic log (HTML-escaped, so the chip's SVG doesn't try to render twice).
+- When the `finish` payload arrives, the front-end transitions to the rendered article grid via `renderNews(payload.data)`. In the article modal, `article.search_entry_point_html` is written via `innerHTML` so the chip's inline `@media(prefers-color-scheme)` styles render unmodified — required by the [Google Search Grounding display terms](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search).
 
 ### When to use this pattern instead of ADK Web
 
 `make playground` is for the *developer* — interactive runs, drilling into events, no UI work. The embedded-`Runner` pattern is for *end users* of your agent — when you need a custom branded UI, custom routing or auth, or to integrate the agent into an existing application. The file at `webapp/app.py` is small and copy-able as a starting point for your own embedding.
 
+## Alternative: agent-level routing
+
+If you want a **single** Workflow that decides between paths internally (no app-level mode param), ADK 2.0 supports conditional edges via a `RoutingMap` dict. A router `@node` emits an `Event(route="…")` and the dict picks the destination:
+
+```python
+from google.adk.events.event import Event
+from google.adk.workflow import Workflow, node
+
+@node
+def router(node_input):
+    text = _user_text(node_input).lower()
+    if "archive" in text or "past" in text:
+        return Event(output=node_input, route="archive")
+    return Event(output=node_input, route="news")
+
+root_agent = Workflow(
+    name="news_workflow",
+    edges=[
+        ("START", router),
+        (router, {"news": planner_agent, "archive": archive_reader_agent}),
+        (planner_agent, research_orchestrator),
+        (research_orchestrator, compiler_agent),
+    ],
+)
+```
+
+📚 [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/) for the canonical conditional-routing form.
+
+> ⚠️ The cheatsheet's `(source, target, "route")` 3-tuple form is **not supported** by the real `Workflow` Pydantic model — use the `RoutingMap` dict shown here or an explicit `Edge(from_node=…, to_node=…, route=…)` object. See [GEMINI.md → ADK 2.0 Cheatsheet Overrides](../../GEMINI.md).
+
+**Trade-offs vs the two-workflow approach:**
+- Pro: a single Workflow object, single `root_agent` for ADK Web, intent stays inside the agent layer (better fit if you don't have a UI signaling intent).
+- Con: a rule-based router is brittle; an LLM-based router (`LlmAgent` with `output_schema=RouteDecision` followed by a small `@node`) costs an extra LLM call and adds latency before either branch starts.
+- Con: harder to test the branches independently — every CLI/playground invocation has to go through the router.
+
+For the AI Newsroom web app, the two-workflow approach is a better fit because the UI button click is unambiguous. For a chat-style agent where intent has to be inferred from free-form text, agent-level routing makes more sense.
+
 ## References & Further Reading
 
 - **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (stability status; install instructions for the Beta).
 - **Workflow API** — [adk.dev/workflows](https://adk.dev/workflows/) (nodes, edges, START — the mental model).
-- **Conditional routing** — [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/) (RoutingMap dicts; route values).
+- **Conditional routing** — [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/) (`RoutingMap` dicts; route values).
 - **Dynamic parallelism** — [adk.dev/workflows/dynamic](https://adk.dev/workflows/dynamic/) (`ctx.run_node` + `asyncio.gather` patterns).
 - **Data flow between nodes** — [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) (how `node_input` is populated; structured output passing).
 - **Vertex AI Vector Search** — [docs.cloud.google.com/vertex-ai/vector-search/overview](https://docs.cloud.google.com/vertex-ai/vector-search/overview).
