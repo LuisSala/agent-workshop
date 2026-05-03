@@ -1,13 +1,24 @@
-# MODULE 02-AGENT-ORCHESTRATION: SOLUTION (ADK 2.0 Workflow API)
+# MODULE 02 — Agent Orchestration (ADK 2.0 Workflow API)
 #
-# A linear three-step newsroom pipeline: planner → research → compiler.
+# A linear three-step newsroom pipeline: a planner → a researcher (with
+# google_search) → an editor-in-chief compiler.
 #
-# Compared to the 1.x version this teaches:
-#   - SequentialAgent → Workflow with linear edges
-#   - Agent → LlmAgent (renamed in 2.0)
-#   - State templating ({search_plan}, {search_results}) → node_input
+#       START --> planner_agent --> research_agent --> compiler_agent
+#                  (LlmAgent          (LlmAgent          (LlmAgent
+#                   output_schema      tools=[            text output)
+#                    SearchPlan)       google_search])
+#
+# Patterns demonstrated and where to read about them:
+#   * Workflow overview ............ https://adk.dev/workflows/
+#   * LlmAgent + tools + schema .... https://adk.dev/2.0/
+#   * Data flow between nodes ...... https://adk.dev/workflows/data-handling/
+#
+# Compared to the 1.x version this swaps:
+#   * SequentialAgent → Workflow with linear edges
+#   * Agent → LlmAgent (same class, renamed in 2.0)
+#   * State templating ({search_plan}, {search_results}) → node_input
 #     (the predecessor's return value is auto-injected as the LLM's user
-#     message). The instruction string is now strictly a system prompt.
+#     message; the instruction string is now strictly a system prompt)
 
 import datetime
 
@@ -25,6 +36,11 @@ worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
 
 
+# --- Structured Pydantic Schemas ---
+# When an LlmAgent has `output_schema` set, ADK forces the model to emit a
+# JSON object matching the schema and downstream nodes receive it as a
+# `dict`. See the node_input table at https://adk.dev/workflows/data-handling/.
+
 class SearchPlan(BaseModel):
     queries: list[str] = Field(
         description="2-3 very specific Google Search queries to research."
@@ -37,6 +53,10 @@ def get_current_server_time() -> str:
 
 
 # --- Pipeline nodes ---
+# Each node's return value is auto-forwarded as the next node's `node_input`.
+# That means the research_agent receives the SearchPlan dict as its user
+# message, and the compiler receives the research_agent's text output. No
+# {state_key} interpolation, no output_key plumbing for intermediate steps.
 
 planner_agent = LlmAgent(
     name="planner_agent",
@@ -77,10 +97,17 @@ compiler_agent = LlmAgent(
 )
 
 
-# --- Top-level Workflow (replaces SequentialAgent + root_agent topology) ---
-# Edges define the strict left-to-right pipeline. Each node's return value is
-# automatically forwarded as the next node's `node_input`, so we no longer
-# need {state_var} interpolation in the instruction strings.
+# --- Top-level Workflow ---
+# Edges define the strict left-to-right pipeline. The terminal node's output
+# becomes the workflow's output. No conversational outer LlmAgent — the
+# Workflow IS the root, since this is a single-purpose newsroom pipeline.
+#
+# Note: this module deliberately does NOT set `output_key="compiled_news"`
+# on the compiler. Mod02's compiler emits raw text; the webapp's persistence
+# guard requires structured output (NewspaperPage with an `articles` array),
+# which is introduced in mod03. Students running mod02 in `make run-webapp`
+# will see the live event log and a "[system] Agent finished" message at
+# the end — that's the intended behavior.
 
 root_agent = Workflow(
     name="news_workflow",

@@ -1,10 +1,34 @@
-# MODULE 03-ADVANCED-ORCHESTRATION: SOLUTION (ADK 2.0 Workflow API)
+# MODULE 03 — Advanced Orchestration (ADK 2.0 Workflow API)
 #
-# Replaces the 1.x SequentialAgent / ParallelAgent / custom BaseAgent pattern with
-# the new ADK 2.0 Workflow graph API:
-#   - Workflow + edges replace SequentialAgent
-#   - asyncio.gather(ctx.run_node(...)) replaces ParallelAgent + ParallelResearcherFactory
-#   - Agent → LlmAgent (same class, renamed in 2.0)
+# A multi-step newsroom pipeline that fans out to N parallel research agents
+# based on a planner's topic list, then funnels the drafts into a compiler.
+#
+#                                  +---> researcher[0]
+#                                  |
+#       START --> planner_agent ---+---> researcher[1]   --> compiler_agent --> NewspaperPage
+#                  (LlmAgent       |   (asyncio.gather)       (LlmAgent
+#                  output_schema   +---> researcher[…]         output_schema
+#                  TopicPlan)                                  NewspaperPage,
+#                                  research_orchestrator       output_key
+#                                  (@node, rerun_on_resume)    "compiled_news")
+#
+# Patterns demonstrated and where to read about them:
+#   * Workflow overview ........... https://adk.dev/workflows/
+#   * Dynamic parallelism via
+#     ctx.run_node + asyncio ...... https://adk.dev/workflows/dynamic/
+#   * Data flow between nodes ..... https://adk.dev/workflows/data-handling/
+#   * LlmAgent + structured output  https://adk.dev/2.0/
+#   * Google Search Grounding
+#     display requirements ........ https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
+#
+# Compared to the 1.x version this collapses three things:
+#   * SequentialAgent → Workflow with linear edges
+#   * Custom ParallelResearcherFactory(BaseAgent) + manual JSON-string parsing
+#     → a single @node function that uses asyncio.gather(ctx.run_node(...))
+#   * Per-researcher after_agent_callback for citation extraction →
+#     orchestrator-level slice of session.events (utils/citations.py)
+#
+# Stability note: ADK 2.0 is Beta. APIs may shift before GA.
 
 import asyncio
 import datetime
@@ -24,11 +48,15 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-# Make the repo-level utils/ importable (matches the pattern used by mod04 for
-# vector_store.py — keeps non-pipeline plumbing out of the agent file).
+# Repo-level utils/ on sys.path — the citation-extraction helper lives there
+# so the agent file stays focused on the pipeline structure rather than the
+# event-traversal plumbing. (Mod04 follows the same pattern for vector_store.py.)
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from utils.citations import extract_citations_from_events  # noqa: E402
 
+# Vertex AI auth bootstrap. PROJECT_ID comes from the root .env; if unset we
+# fall back to gcloud ADC. GEMINI_LOCATION lets us pick regional vs. global
+# routing — set it to "global" if you ever see a 404 on the model name.
 try:
     project_id = os.environ.get("PROJECT_ID") or ""
     if not project_id:
@@ -42,7 +70,14 @@ except Exception as e:
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
 
-# --- Structured Pydantic Schemas ---
+
+# ----------------------------------------------------------------------------
+# Pydantic schemas
+# ----------------------------------------------------------------------------
+# These drive ADK's structured output: when an LlmAgent has `output_schema`
+# set, the framework forces the model to emit a JSON object matching the
+# schema and downstream nodes receive it as a `dict`. See the node_input
+# table at https://adk.dev/workflows/data-handling/.
 
 class Citation(BaseModel):
     title: str = Field(description="Title of the source")
@@ -57,6 +92,9 @@ class ArticleDraft(BaseModel):
 
 class Article(ArticleDraft):
     citations: list[Citation] = Field(default_factory=list, description="Sources used")
+    # Required by Google Search Grounding terms — the chip HTML must be
+    # displayed alongside the grounded article. See the orchestrator below
+    # for where this gets populated and the README for the compliance walk-through.
     search_entry_point_html: Optional[str] = Field(
         default=None, description="Google Search Suggestion chip HTML"
     )
@@ -75,10 +113,14 @@ def get_current_server_time() -> str:
     return f"The current server time is {now.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}"
 
 
-# --- Agents (LlmAgent nodes in the workflow) ---
-# The citation-extraction helper lives in utils/citations.py — see that file
-# for notes on why per-researcher attribution is approximate under parallel
-# ctx.run_node execution and how the orchestrator works around it.
+# ----------------------------------------------------------------------------
+# Pipeline nodes
+# ----------------------------------------------------------------------------
+# Each node's return value is auto-forwarded as the next node's `node_input`.
+# That means the orchestrator receives the planner's TopicPlan dict, the
+# researcher receives a single topic string, and the compiler receives the
+# orchestrator's list of Article dicts. No {state_key} interpolation in the
+# instructions — they're pure system prompts.
 
 planner_agent = LlmAgent(
     name="planner_agent",
@@ -97,6 +139,10 @@ planner_agent = LlmAgent(
 )
 
 
+# A single, shared researcher template. The orchestrator below spawns N
+# parallel sub-runs of this same agent — one per topic — via ctx.run_node.
+# Each sub-run gets its own LLM context but writes events into the parent
+# workflow's session.events stream (see the orchestrator note below).
 researcher_agent = LlmAgent(
     name="researcher",
     model=worker_model,
@@ -113,8 +159,23 @@ researcher_agent = LlmAgent(
 )
 
 
-# Replaces the 1.x ParallelResearcherFactory custom BaseAgent. The graph API
-# lets us spawn N parallel sub-runs natively via ctx.run_node + asyncio.gather.
+# Replaces the 1.x ParallelResearcherFactory(BaseAgent) hand-rolled fan-out.
+# The canonical dynamic-parallelism pattern from
+# https://adk.dev/workflows/dynamic/ is `asyncio.gather(*[ctx.run_node(...)])`.
+#
+# Why `rerun_on_resume=True` is required: parent nodes that call ctx.run_node
+# must opt into rerun-on-resume so an interrupted workflow can re-launch the
+# parallel children without losing state.
+#
+# Citation attribution caveat: every parallel ctx.run_node call shares one
+# `session.events` stream, and Python asyncio runs each coroutine up to its
+# first `await` synchronously — so all `research_one` tasks capture the
+# same `start` index. As tasks complete, each captures `end` at its own
+# moment, but the slice [start:end] picks up grounding chunks emitted by
+# *peers* that happened to finish earlier. The resulting per-article
+# citation list is a SUPERSET of that researcher's real grounding chunks.
+# For workshop purposes this is acceptable — see utils/citations.py and
+# the README for the long-form discussion plus the cleaner alternative.
 @node(rerun_on_resume=True)
 async def research_orchestrator(ctx: Context, node_input: dict) -> list:
     topics = node_input.get("topics", []) if isinstance(node_input, dict) else []
@@ -134,6 +195,7 @@ async def research_orchestrator(ctx: Context, node_input: dict) -> list:
         if isinstance(article, dict):
             article["citations"] = citations
             if rendered:
+                # Required for Google Search Grounding TOS compliance.
                 article["search_entry_point_html"] = rendered
         return article
 
@@ -156,7 +218,8 @@ compiler_agent = LlmAgent(
     CRITICAL: You must strictly preserve each article's exact `citations`
     array and `search_entry_point_html` value. If an article's `citations`
     array is empty `[]`, output an empty array. DO NOT invent, hallucinate,
-    edit, or modify any URLs or HTML.
+    edit, or modify any URLs or HTML. The search_entry_point_html is
+    required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
     # Persist the compiled NewspaperPage to session.state['compiled_news'].
@@ -167,7 +230,13 @@ compiler_agent = LlmAgent(
 )
 
 
-# --- Top-level Workflow (replaces SequentialAgent + root_agent topology) ---
+# ----------------------------------------------------------------------------
+# Top-level Workflow
+# ----------------------------------------------------------------------------
+# Edges define the strict left-to-right pipeline. The terminal node's output
+# (compiler_agent's NewspaperPage) becomes the workflow's final output. No
+# conversational outer LlmAgent — the Workflow IS the root, since this is
+# a single-purpose newsroom pipeline.
 
 root_agent = Workflow(
     name="news_workflow",
