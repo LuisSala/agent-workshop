@@ -12,6 +12,16 @@
 - adk-observability-guide
 - adk-scaffold
 
+### Available Agents-CLI skills:
+The `agents-cli` skills cover the full lifecycle of building, deploying, and operating ADK agents via the `agents-cli` tool. Start at `google-agents-cli-workflow` for the end-to-end map.
+- google-agents-cli-workflow — entrypoint; full development lifecycle
+- google-agents-cli-scaffold — create / enhance / upgrade agent projects
+- google-agents-cli-adk-code — ADK Python API patterns (agents, tools, callbacks, state)
+- google-agents-cli-eval — evalsets, metrics, LLM-as-judge, eval-fix loop
+- google-agents-cli-deploy — Agent Runtime, Cloud Run, GKE, CI/CD, secrets
+- google-agents-cli-observability — Cloud Trace, prompt-response logs, BigQuery analytics
+- google-agents-cli-publish — register agents with Gemini Enterprise
+
 ### MCP Tools:
 Use MCP tools, such as "Deepwiki" to access up-to-date information and AI-generated guidance.
 The relevant Deepwiki repository names are:
