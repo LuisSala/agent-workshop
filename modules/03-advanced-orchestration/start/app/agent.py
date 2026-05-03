@@ -1,24 +1,39 @@
-# MODULE 02 — Agent Orchestration (ADK 2.0 Workflow API)
+# MODULE 03 — Advanced Orchestration: START
 #
-# A linear three-step newsroom pipeline: a planner → a researcher (with
-# google_search) → an editor-in-chief compiler.
+# In this module you'll evolve the linear pipeline below (your mod02
+# solution) into a dynamic-parallel pipeline that spawns N researchers
+# based on a planner's topic list, then collects verified citations from
+# the underlying Google Search grounding metadata.
 #
-#       START --> planner_agent --> research_agent --> compiler_agent
-#                  (LlmAgent          (LlmAgent          (LlmAgent
-#                   output_schema      tools=[            text output)
-#                    SearchPlan)       google_search])
+# Your destination:
+#                                  +---> researcher[0]
+#                                  |
+#       START --> planner_agent ---+---> researcher[1]   --> compiler_agent
+#                  (TopicPlan)     |   (asyncio.gather)       (NewspaperPage,
+#                                  +---> researcher[…]         output_key
+#                                  research_orchestrator       "compiled_news")
+#                                  (@node, rerun_on_resume)
 #
-# Patterns demonstrated and where to read about them:
-#   * Workflow overview ............ https://adk.dev/workflows/
-#   * LlmAgent + tools + schema .... https://adk.dev/2.0/
-#   * Data flow between nodes ...... https://adk.dev/workflows/data-handling/
+# What you'll build (follow modules/03-advanced-orchestration/README.md):
+#   - Add Pydantic schemas: Citation, ArticleDraft, Article, NewspaperPage,
+#     TopicPlan (replaces SearchPlan from mod02)
+#   - Replace research_agent with a single shared researcher_agent template
+#     (LlmAgent with output_schema=Article, tools=[google_search])
+#   - Add a research_orchestrator @node(rerun_on_resume=True) that uses
+#     asyncio.gather(ctx.run_node(researcher_agent, …)) to spawn N parallel
+#     sub-runs based on the TopicPlan
+#   - Pull verified citation URLs from each researcher's session.events
+#     slice via utils.citations.extract_citations_from_events
+#   - Update compiler_agent: output_schema=NewspaperPage, output_key="compiled_news"
+#     (the output_key is what makes the webapp render the result; without
+#     it the front-end falls back to the diagnostic event log)
 #
-# Compared to the 1.x version this swaps:
-#   * SequentialAgent → Workflow with linear edges
-#   * Agent → LlmAgent (same class, renamed in 2.0)
-#   * State templating ({search_plan}, {search_results}) → node_input
-#     (the predecessor's return value is auto-injected as the LLM's user
-#     message; the instruction string is now strictly a system prompt)
+# Key references:
+#   * Dynamic parallelism via
+#     ctx.run_node + asyncio ........... https://adk.dev/workflows/dynamic/
+#   * Data flow between nodes .......... https://adk.dev/workflows/data-handling/
+#   * Google Search Grounding (display
+#     requirements MUST be honored) .... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 
 import datetime
 

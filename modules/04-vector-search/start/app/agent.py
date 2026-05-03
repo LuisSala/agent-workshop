@@ -1,34 +1,37 @@
-# MODULE 03 — Advanced Orchestration (ADK 2.0 Workflow API)
+# MODULE 04 — Vector Search & Routing: START
 #
-# A multi-step newsroom pipeline that fans out to N parallel research agents
-# based on a planner's topic list, then funnels the drafts into a compiler.
+# In this module you'll add an archive branch to the news pipeline below
+# (your mod03 solution): a Vector Search-backed librarian that runs when
+# the user asks about *past* coverage instead of *fresh* news. The router
+# decides which branch fires.
 #
-#                                  +---> researcher[0]
-#                                  |
-#       START --> planner_agent ---+---> researcher[1]   --> compiler_agent --> NewspaperPage
-#                  (LlmAgent       |   (asyncio.gather)       (LlmAgent
-#                  output_schema   +---> researcher[…]         output_schema
-#                  TopicPlan)                                  NewspaperPage,
-#                                  research_orchestrator       output_key
-#                                  (@node, rerun_on_resume)    "compiled_news")
+# Your destination:
+#                                +-> planner_agent --> research_orchestrator
+#                                |                                              --> compiler_agent (terminal: news)
+#                       (route="news")                                                  |
+#       START --> router(@node) -+                                                      v
+#                                 |                                                NewspaperPage
+#                       (route="archive")                                               ^
+#                                 |                                                     |
+#                                 +-> archive_reader_agent (terminal: archive) ---------+
 #
-# Patterns demonstrated and where to read about them:
-#   * Workflow overview ........... https://adk.dev/workflows/
-#   * Dynamic parallelism via
-#     ctx.run_node + asyncio ...... https://adk.dev/workflows/dynamic/
-#   * Data flow between nodes ..... https://adk.dev/workflows/data-handling/
-#   * LlmAgent + structured output  https://adk.dev/2.0/
-#   * Google Search Grounding
-#     display requirements ........ https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
+# What you'll build (follow modules/04-vector-search/README.md):
+#   - A router @node that classifies the user's query and emits
+#     Event(output=node_input, route="news"|"archive")
+#   - A search_news_archive tool that delegates to utils.vector_store.search_archive
+#   - An archive_reader_agent (LlmAgent) with tools=[search_news_archive]
+#     and output_schema=NewspaperPage
+#   - A RoutingMap dict edge: (router, {"news": planner, "archive": archive_reader})
+#     — see the cheatsheet override note in GEMINI.md (the cheatsheet's
+#     (src, dst, "route") 3-tuple form is NOT supported)
+#   - Both terminal nodes need output_key="compiled_news" so the webapp
+#     renders results from either path
 #
-# Compared to the 1.x version this collapses three things:
-#   * SequentialAgent → Workflow with linear edges
-#   * Custom ParallelResearcherFactory(BaseAgent) + manual JSON-string parsing
-#     → a single @node function that uses asyncio.gather(ctx.run_node(...))
-#   * Per-researcher after_agent_callback for citation extraction →
-#     orchestrator-level slice of session.events (utils/citations.py)
-#
-# Stability note: ADK 2.0 is Beta. APIs may shift before GA.
+# Key references:
+#   * Conditional routing (RoutingMap) . https://adk.dev/workflows/graph-routes/
+#   * Vertex AI Vector Search .......... https://docs.cloud.google.com/vertex-ai/vector-search/overview
+#   * Google Search Grounding (display
+#     requirements MUST be honored) .... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 
 import asyncio
 import datetime
