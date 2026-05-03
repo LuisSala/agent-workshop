@@ -6,7 +6,7 @@ authors = [
     {name = "Your Name", email = "your@email.com"},
 ]
 dependencies = [
-    "google-adk>=1.28.0",
+    "google-adk>=2.0.0a1",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
@@ -36,13 +36,18 @@ jupyter = [
     "jupyter>=1.0.0,<2.0.0",
 ]
 eval = [
-    "google-adk[eval]>=1.15.0,<2.0.0",
+    "google-adk[eval]>=2.0.0a1",
 ]
 lint = [
     "ruff>=0.4.6,<1.0.0",
     "ty>=0.0.1a0",
     "codespell>=2.2.0,<3.0.0",
 ]
+
+[tool.uv]
+# ADK 2.0 is a Beta (pre-release). Allow pre-release resolution so
+# `uv sync` and `make install` Just Work without extra flags.
+prerelease = "allow"
 
 [tool.ruff]
 line-length = 88
