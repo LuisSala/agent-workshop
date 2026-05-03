@@ -1,34 +1,40 @@
-# MODULE 03 — Advanced Orchestration (ADK 2.0 Workflow API)
+# MODULE 04 — Vector Search & Structured UI Integration (ADK 2.0 Workflow API)
 #
-# A multi-step newsroom pipeline that fans out to N parallel research agents
-# based on a planner's topic list, then funnels the drafts into a compiler.
+# A multi-purpose AI Newsroom defined as TWO independent Workflows:
 #
-#                                  +---> researcher[0]
-#                                  |
-#       START --> planner_agent ---+---> researcher[1]   --> compiler_agent --> NewspaperPage
-#                  (LlmAgent       |   (asyncio.gather)       (LlmAgent
-#                  output_schema   +---> researcher[…]         output_schema
-#                  TopicPlan)                                  NewspaperPage,
-#                                  research_orchestrator       output_key
-#                                  (@node, rerun_on_resume)    "compiled_news")
+#   news_workflow:
+#       START --> planner_agent --> research_orchestrator --> compiler_agent
+#                  (LlmAgent)        (@node, fan-out)          (NewspaperPage)
+#
+#   archive_workflow:
+#       START --> archive_reader_agent
+#                  (LlmAgent + search_news_archive tool, NewspaperPage)
+#
+# The webapp at webapp/app.py picks which workflow to run based on the
+# UI button the user clicked (a `?mode=news|archive` query param).
+# The agent layer no longer re-derives intent from the prompt.
+#
+# Why two workflows instead of one with a router @node? The user's intent
+# is already known at the UI layer (which button was clicked). Asking the
+# agent to re-derive it via keyword matching is brittle ("show me past
+# articles" vs "show me articles about the past" — the rule-based router
+# can't tell them apart). App-level routing is cleaner.
+#
+# If you want IN-AGENT conditional routing (a single Workflow with a
+# router @node and a `RoutingMap` dict edge), the canonical pattern is
+# at https://adk.dev/workflows/graph-routes/ — see this module's README
+# → "Alternative: agent-level routing" for the trade-offs.
 #
 # Patterns demonstrated and where to read about them:
-#   * Workflow overview ........... https://adk.dev/workflows/
-#   * Dynamic parallelism via
-#     ctx.run_node + asyncio ...... https://adk.dev/workflows/dynamic/
-#   * Data flow between nodes ..... https://adk.dev/workflows/data-handling/
-#   * LlmAgent + structured output  https://adk.dev/2.0/
-#   * Google Search Grounding
-#     display requirements ........ https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
+#   * Workflow overview ............... https://adk.dev/workflows/
+#   * Dynamic parallelism via run_node  https://adk.dev/workflows/dynamic/
+#   * LlmAgent + tools + output_schema  https://adk.dev/2.0/
+#   * Vertex AI Vector Search           https://docs.cloud.google.com/vertex-ai/vector-search/overview
+#   * Google Search Grounding (display
+#     requirements MUST be honored) ... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 #
-# Compared to the 1.x version this collapses three things:
-#   * SequentialAgent → Workflow with linear edges
-#   * Custom ParallelResearcherFactory(BaseAgent) + manual JSON-string parsing
-#     → a single @node function that uses asyncio.gather(ctx.run_node(...))
-#   * Per-researcher after_agent_callback for citation extraction →
-#     orchestrator-level slice of session.events (utils/citations.py)
-#
-# Stability note: ADK 2.0 is Beta. APIs may shift before GA.
+# Stability note: ADK 2.0 is Beta. Breaking API changes are possible until GA;
+# this file pins the patterns as observed against google-adk == 2.0.0b1.
 
 import asyncio
 import datetime
@@ -48,15 +54,17 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-# Repo-level utils/ on sys.path — the citation-extraction helper lives there
-# so the agent file stays focused on the pipeline structure rather than the
-# event-traversal plumbing. (Mod04 follows the same pattern for vector_store.py.)
+# Repo-level utils/ on sys.path so the agent can import shared helpers.
+# Both citation extraction and the Vector Search wrapper live there to keep
+# this file focused on the pipeline structure rather than the plumbing.
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from utils.citations import extract_citations_from_events  # noqa: E402
+from utils.vector_store import search_archive  # noqa: E402
 
-# Vertex AI auth bootstrap. PROJECT_ID comes from the root .env; if unset we
-# fall back to gcloud ADC. GEMINI_LOCATION lets us pick regional vs. global
-# routing — set it to "global" if you ever see a 404 on the model name.
+# Vertex AI auth bootstrap — pulls PROJECT_ID from the root .env and falls
+# back to gcloud ADC if the env var is unset. GEMINI_LOCATION lets us point
+# the LLM at a regional or global routing endpoint (use "global" if you see
+# a 404 on the model name).
 try:
     project_id = os.environ.get("PROJECT_ID") or ""
     if not project_id:
@@ -92,11 +100,11 @@ class ArticleDraft(BaseModel):
 
 class Article(ArticleDraft):
     citations: list[Citation] = Field(default_factory=list, description="Sources used")
-    # Required by Google Search Grounding terms — the chip HTML must be
-    # displayed alongside the grounded article. See the orchestrator below
-    # for where this gets populated and the README for the compliance walk-through.
+    # The Google Search Suggestion chip HTML — REQUIRED to be displayed
+    # alongside any grounded response. See the display requirements at
+    # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
     search_entry_point_html: Optional[str] = Field(
-        default=None, description="Google Search Suggestion chip HTML"
+        default=None, description="Google Search Suggestion chip HTML (must be rendered alongside the article)"
     )
 
 
@@ -114,13 +122,23 @@ def get_current_server_time() -> str:
 
 
 # ----------------------------------------------------------------------------
-# Pipeline nodes
+# Tool: archive search (delegates to utils.vector_store)
 # ----------------------------------------------------------------------------
-# Each node's return value is auto-forwarded as the next node's `node_input`.
-# That means the orchestrator receives the planner's TopicPlan dict, the
-# researcher receives a single topic string, and the compiler receives the
-# orchestrator's list of Article dicts. No {state_key} interpolation in the
-# instructions — they're pure system prompts.
+# Wrapping `search_archive` rather than passing it directly means students
+# can adjust the empty-result UX (returning a status payload instead of
+# `None`) without touching utils/vector_store.py.
+
+def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
+    """Search the Vector Search archive for past articles relevant to a query."""
+    results = search_archive(query, top_k)
+    if not results:
+        return [{"status": "success", "results": "No archived articles found."}]
+    return results
+
+
+# ----------------------------------------------------------------------------
+# News pipeline (mod03-style): planner → orchestrator → compiler
+# ----------------------------------------------------------------------------
 
 planner_agent = LlmAgent(
     name="planner_agent",
@@ -130,8 +148,8 @@ planner_agent = LlmAgent(
 
     You are a senior news editor. Given a broad news request from the user,
     generate a structured plan of at least 3 specific topics or "beats" to
-    assign to your research team. Unless the user requests otherwise, focus
-    on recent developments from the past 3 days. Use Google Search to discover
+    assign to your research team. Focus on recent developments from the past
+    3 days unless the user requests otherwise. Use Google Search to discover
     the most important beats first.
     """,
     tools=[google_search],
@@ -141,8 +159,6 @@ planner_agent = LlmAgent(
 
 # A single, shared researcher template. The orchestrator below spawns N
 # parallel sub-runs of this same agent — one per topic — via ctx.run_node.
-# Each sub-run gets its own LLM context but writes events into the parent
-# workflow's session.events stream (see the orchestrator note below).
 researcher_agent = LlmAgent(
     name="researcher",
     model=worker_model,
@@ -159,13 +175,13 @@ researcher_agent = LlmAgent(
 )
 
 
-# Replaces the 1.x ParallelResearcherFactory(BaseAgent) hand-rolled fan-out.
-# The canonical dynamic-parallelism pattern from
-# https://adk.dev/workflows/dynamic/ is `asyncio.gather(*[ctx.run_node(...)])`.
+# Replaces the 1.x ParallelResearcherFactory(BaseAgent) hand-rolled fan-out
+# with the canonical dynamic-parallelism pattern from
+# https://adk.dev/workflows/dynamic/ : `asyncio.gather(*[ctx.run_node(...)])`.
 #
 # Why `rerun_on_resume=True` is required: parent nodes that call ctx.run_node
-# must opt into rerun-on-resume so an interrupted workflow can re-launch the
-# parallel children without losing state.
+# must opt into rerun-on-resume so that an interrupted workflow can re-launch
+# the parallel children without losing state.
 #
 # Citation attribution caveat: every parallel ctx.run_node call shares one
 # `session.events` stream, and Python asyncio runs each coroutine up to its
@@ -174,8 +190,8 @@ researcher_agent = LlmAgent(
 # moment, but the slice [start:end] picks up grounding chunks emitted by
 # *peers* that happened to finish earlier. The resulting per-article
 # citation list is a SUPERSET of that researcher's real grounding chunks.
-# For workshop purposes this is acceptable — see utils/citations.py and
-# the README for the long-form discussion plus the cleaner alternative.
+# For workshop purposes this is acceptable; see utils/citations.py for the
+# long-form discussion plus the cleaner alternative.
 @node(rerun_on_resume=True)
 async def research_orchestrator(ctx: Context, node_input: dict) -> list:
     topics = node_input.get("topics", []) if isinstance(node_input, dict) else []
@@ -222,23 +238,52 @@ compiler_agent = LlmAgent(
     required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
-    # Persist the compiled NewspaperPage to session.state['compiled_news'].
-    # webapp/app.py reads this after the run to write the persistent newsletter
-    # JSON and emit the SSE 'finish' payload that triggers the front-end's
-    # transition from the diagnostic event log to the rendered article grid.
+    # output_key publishes the compiled result to session.state['compiled_news'].
+    # The AI Newsroom web app reads this from outside the workflow to render
+    # the article grid — see this module's README → "Embedding a Runner" for
+    # the full integration walk-through.
     output_key="compiled_news",
 )
 
 
 # ----------------------------------------------------------------------------
-# Top-level Workflow
+# Archive-path agent (single-step "workflow")
 # ----------------------------------------------------------------------------
-# Edges define the strict left-to-right pipeline. The terminal node's output
-# (compiler_agent's NewspaperPage) becomes the workflow's final output. No
-# conversational outer LlmAgent — the Workflow IS the root, since this is
-# a single-purpose newsroom pipeline.
+# A single LlmAgent equipped with the Vector Search tool and forced to emit
+# a NewspaperPage.
 
-root_agent = Workflow(
+archive_reader_agent = LlmAgent(
+    name="archive_reader_agent",
+    model=pro_model,
+    instruction=f"""
+    The current date and time is: {get_current_server_time()}
+
+    You are an archival librarian answering questions using past editions of
+    the newspaper. Always search the archive first using `search_news_archive`.
+
+    Construct your output as a NewspaperPage with multiple Article objects:
+    each article has a title, an engaging teaser, and the full content body
+    formatted in Markdown. Strictly preserve and populate the original
+    `citations` array from your search results into the final schema.
+    """,
+    tools=[search_news_archive],
+    output_schema=NewspaperPage,
+    # Same contract as compiler_agent — see that comment above.
+    output_key="compiled_news",
+)
+
+
+# ----------------------------------------------------------------------------
+# Top-level Workflows
+# ----------------------------------------------------------------------------
+# Two independent graphs. webapp/app.py imports both and picks one per
+# request based on the UI button the user clicked (the `?mode=` query
+# param). ADK Web (`make playground`) only sees `root_agent`, so we alias
+# it to news_workflow for development convenience — to test the archive
+# flow during development, drive it via the AI Newsroom web app or write
+# a small script that imports `archive_workflow` directly.
+
+news_workflow = Workflow(
     name="news_workflow",
     edges=[
         ("START", planner_agent),
@@ -246,6 +291,17 @@ root_agent = Workflow(
         (research_orchestrator, compiler_agent),
     ],
 )
+
+archive_workflow = Workflow(
+    name="archive_workflow",
+    edges=[
+        ("START", archive_reader_agent),
+    ],
+)
+
+# ADK Web's developmental default. The webapp ignores this and selects
+# from {news_workflow, archive_workflow} explicitly per request.
+root_agent = news_workflow
 
 
 app = App(

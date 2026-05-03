@@ -1,22 +1,32 @@
 # MODULE 04 — Vector Search & Structured UI Integration (ADK 2.0 Workflow API)
 #
-# A multi-purpose AI Newsroom that BOTH researches fresh news with parallel
-# Google Search agents AND looks up archived stories from a Vertex AI Vector
-# Search collection — picking between the two paths via a router node.
+# A multi-purpose AI Newsroom defined as TWO independent Workflows:
 #
-#                                +-> planner_agent --> research_orchestrator
-#                                |     (LlmAgent)        (@node, fan-out)        --> compiler_agent (terminal: news)
-#                                |                                                       |
-#                       (route="news")                                                   v
-#       START --> router(@node) --+                                                  NewspaperPage
-#                                 |
-#                       (route="archive")
-#                                 |
-#                                 +-> archive_reader_agent (terminal: archive) ---> NewspaperPage
+#   news_workflow:
+#       START --> planner_agent --> research_orchestrator --> compiler_agent
+#                  (LlmAgent)        (@node, fan-out)          (NewspaperPage)
+#
+#   archive_workflow:
+#       START --> archive_reader_agent
+#                  (LlmAgent + search_news_archive tool, NewspaperPage)
+#
+# The webapp at webapp/app.py picks which workflow to run based on the
+# UI button the user clicked (a `?mode=news|archive` query param).
+# The agent layer no longer re-derives intent from the prompt.
+#
+# Why two workflows instead of one with a router @node? The user's intent
+# is already known at the UI layer (which button was clicked). Asking the
+# agent to re-derive it via keyword matching is brittle ("show me past
+# articles" vs "show me articles about the past" — the rule-based router
+# can't tell them apart). App-level routing is cleaner.
+#
+# If you want IN-AGENT conditional routing (a single Workflow with a
+# router @node and a `RoutingMap` dict edge), the canonical pattern is
+# at https://adk.dev/workflows/graph-routes/ — see this module's README
+# → "Alternative: agent-level routing" for the trade-offs.
 #
 # Patterns demonstrated and where to read about them:
 #   * Workflow overview ............... https://adk.dev/workflows/
-#   * Conditional routing (RoutingMap)  https://adk.dev/workflows/graph-routes/
 #   * Dynamic parallelism via run_node  https://adk.dev/workflows/dynamic/
 #   * LlmAgent + tools + output_schema  https://adk.dev/2.0/
 #   * Vertex AI Vector Search           https://docs.cloud.google.com/vertex-ai/vector-search/overview
@@ -37,7 +47,6 @@ from typing import Optional
 from google.adk.agents import LlmAgent
 from google.adk.agents.context import Context
 from google.adk.apps import App
-from google.adk.events.event import Event
 from google.adk.tools import google_search
 from google.adk.workflow import Workflow, node
 
@@ -128,48 +137,7 @@ def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------
-# Router: decide news vs archive
-# ----------------------------------------------------------------------------
-# A function `@node` that classifies the user's query and emits an `Event`
-# whose `route` value picks the next branch. The webapp's "Search Archives"
-# button prepends "Search the archive for past news on:" to the query, so
-# matching on the literal "archive" keyword is sufficient for the workshop.
-#
-# For an LLM-driven router, swap this @node for an LlmAgent with
-# output_schema=RouteDecision, then attach a tiny @node that converts the
-# LlmAgent's dict into Event(route=...). The workflow edges below stay the same.
-#
-# Routing API reference: https://adk.dev/workflows/graph-routes/
-
-ARCHIVE_KEYWORDS = ("archive", "past", "historical", "previously", "earlier",
-                    "old", "from yesterday", "last week")
-
-
-def _user_text(node_input) -> str:
-    """Pull plain text out of START's types.Content payload.
-
-    The START node's output is `types.Content` (not a string) unless the
-    Workflow has an `input_schema` set. See the predecessor → node_input
-    type table at https://adk.dev/workflows/data-handling/.
-    """
-    parts = getattr(node_input, "parts", None)
-    if parts:
-        return " ".join(p.text for p in parts if getattr(p, "text", None))
-    return str(node_input)
-
-
-@node
-def router(node_input):
-    text = _user_text(node_input).lower()
-    if any(k in text for k in ARCHIVE_KEYWORDS):
-        print(f"[DEBUG] router: → archive (matched keyword in '{text[:80]}')")
-        return Event(output=node_input, route="archive")
-    print(f"[DEBUG] router: → news ('{text[:80]}')")
-    return Event(output=node_input, route="news")
-
-
-# ----------------------------------------------------------------------------
-# News-path agents (mod03-style)
+# News pipeline (mod03-style): planner → orchestrator → compiler
 # ----------------------------------------------------------------------------
 
 planner_agent = LlmAgent(
@@ -213,14 +181,17 @@ researcher_agent = LlmAgent(
 #
 # Why `rerun_on_resume=True` is required: parent nodes that call ctx.run_node
 # must opt into rerun-on-resume so that an interrupted workflow can re-launch
-# the parallel children without losing state. See the dynamic workflows guide.
+# the parallel children without losing state.
 #
-# Note on citation attribution under parallelism: all parallel ctx.run_node
-# calls share one `session.events` stream, so the [start:end] slice each
-# `research_one` captures will overlap with peers' grounding events. The
-# resulting per-article citation list is a SUPERSET of that researcher's
-# real grounding chunks. For a workshop demo this is acceptable; see
-# utils/citations.py for the full discussion and the cleaner alternative.
+# Citation attribution caveat: every parallel ctx.run_node call shares one
+# `session.events` stream, and Python asyncio runs each coroutine up to its
+# first `await` synchronously — so all `research_one` tasks capture the
+# same `start` index. As tasks complete, each captures `end` at its own
+# moment, but the slice [start:end] picks up grounding chunks emitted by
+# *peers* that happened to finish earlier. The resulting per-article
+# citation list is a SUPERSET of that researcher's real grounding chunks.
+# For workshop purposes this is acceptable; see utils/citations.py for the
+# long-form discussion plus the cleaner alternative.
 @node(rerun_on_resume=True)
 async def research_orchestrator(ctx: Context, node_input: dict) -> list:
     topics = node_input.get("topics", []) if isinstance(node_input, dict) else []
@@ -276,13 +247,10 @@ compiler_agent = LlmAgent(
 
 
 # ----------------------------------------------------------------------------
-# Archive-path agent
+# Archive-path agent (single-step "workflow")
 # ----------------------------------------------------------------------------
 # A single LlmAgent equipped with the Vector Search tool and forced to emit
-# a NewspaperPage. The 1.x version had this same shape; in 2.0 it slots
-# directly into the Workflow as a terminal node (its output becomes the
-# workflow output). No per-agent peer registration via sub_agents=[...] —
-# that pattern triggers ADK 2.0's `peer_agent.mode` regression.
+# a NewspaperPage.
 
 archive_reader_agent = LlmAgent(
     name="archive_reader_agent",
@@ -300,36 +268,40 @@ archive_reader_agent = LlmAgent(
     """,
     tools=[search_news_archive],
     output_schema=NewspaperPage,
-    # See compiler_agent — same persistence/SSE contract for the archive branch.
+    # Same contract as compiler_agent — see that comment above.
     output_key="compiled_news",
 )
 
 
 # ----------------------------------------------------------------------------
-# Top-level Workflow with conditional routing
+# Top-level Workflows
 # ----------------------------------------------------------------------------
-# Edges define the graph. The router node emits Event(route="news"|"archive")
-# and the second edge below — a `RoutingMap` dict — picks the matching
-# branch. After the router fires, only ONE of the two terminal nodes runs;
-# its output becomes the workflow's final output.
-#
-# Important API note: the bundled adk-2.0.md cheatsheet shows a
-# `(source, target, "route")` 3-tuple form which is NOT supported by the
-# real Workflow Pydantic model. The authoritative form is either the
-# RoutingMap dict shown here or an explicit Edge(from_node=, to_node=,
-# route=) object. See GEMINI.md → "ADK 2.0 Cheatsheet Overrides" for the
-# detail. The canonical example also lives at
-# https://adk.dev/workflows/graph-routes/.
+# Two independent graphs. webapp/app.py imports both and picks one per
+# request based on the UI button the user clicked (the `?mode=` query
+# param). ADK Web (`make playground`) only sees `root_agent`, so we alias
+# it to news_workflow for development convenience — to test the archive
+# flow during development, drive it via the AI Newsroom web app or write
+# a small script that imports `archive_workflow` directly.
 
-root_agent = Workflow(
+news_workflow = Workflow(
     name="news_workflow",
     edges=[
-        ("START", router),
-        (router, {"news": planner_agent, "archive": archive_reader_agent}),
+        ("START", planner_agent),
         (planner_agent, research_orchestrator),
         (research_orchestrator, compiler_agent),
     ],
 )
+
+archive_workflow = Workflow(
+    name="archive_workflow",
+    edges=[
+        ("START", archive_reader_agent),
+    ],
+)
+
+# ADK Web's developmental default. The webapp ignores this and selects
+# from {news_workflow, archive_workflow} explicitly per request.
+root_agent = news_workflow
 
 
 app = App(
