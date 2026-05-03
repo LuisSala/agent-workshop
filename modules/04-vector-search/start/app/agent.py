@@ -1,43 +1,94 @@
-# MODULE 04-VECTOR-SEARCH: START
+# MODULE 04 — Vector Search & Structured UI Integration: START
+#
+# In this module you'll add an archive branch to the newsroom (your mod03
+# solution sits below): a Vector Search-backed librarian that runs when
+# the user asks about *past* coverage instead of *fresh* news. The two
+# branches are exposed as INDEPENDENT Workflows; the AI Newsroom web app
+# (introduced in this module's "Embedding a Runner" section) picks which
+# one to invoke per request based on the UI button the user clicked.
+#
+# Your destination:
+#
+#   news_workflow (the existing mod03 pipeline, kept as-is):
+#       START --> planner_agent --> research_orchestrator --> compiler_agent
+#
+#   archive_workflow (new):
+#       START --> archive_reader_agent
+#
+# What you'll build (follow modules/04-vector-search/README.md):
+#   - A search_news_archive tool that delegates to utils.vector_store.search_archive
+#   - An archive_reader_agent (LlmAgent) with tools=[search_news_archive]
+#     and output_schema=NewspaperPage and output_key="compiled_news"
+#   - A second top-level Workflow (`archive_workflow`) wrapping the
+#     archive_reader_agent
+#   - root_agent = news_workflow (so ADK Web's `make playground` keeps
+#     working; the webapp imports both workflows directly)
+#
+# Why two workflows instead of one Workflow with a router @node? The user's
+# intent is already known at the UI layer (which button was clicked).
+# Asking the agent to re-derive it via keyword matching is brittle. See
+# the README's "Alternative: agent-level routing" section for trade-offs
+# and the canonical RoutingMap pattern if you want it.
+#
+# Key references:
+#   * Workflow overview ............... https://adk.dev/workflows/
+#   * Vertex AI Vector Search ......... https://docs.cloud.google.com/vertex-ai/vector-search/overview
+#   * Conditional routing (alternative) https://adk.dev/workflows/graph-routes/
+#   * Google Search Grounding (display
+#     requirements MUST be honored) ... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 
 import asyncio
 import datetime
-import json
 import os
+import sys
 import google.auth
 from pydantic import BaseModel, Field
+from typing import Optional
 
-from google.adk.agents import Agent, SequentialAgent, BaseAgent, ParallelAgent
-from google.adk.agents.invocation_context import InvocationContext
-from google.adk.agents.callback_context import CallbackContext
-from google.adk.events import Event
+from google.adk.agents import LlmAgent
+from google.adk.agents.context import Context
 from google.adk.apps import App
-from google.adk.tools import AgentTool
 from google.adk.tools import google_search
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
-from typing import AsyncGenerator
+from google.adk.workflow import Workflow, node
 
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv())
+
+# Repo-level utils/ on sys.path — the citation-extraction helper lives there
+# so the agent file stays focused on the pipeline structure rather than the
+# event-traversal plumbing. (Mod04 follows the same pattern for vector_store.py.)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from utils.citations import extract_citations_from_events  # noqa: E402
+
+# Vertex AI auth bootstrap. PROJECT_ID comes from the root .env; if unset we
+# fall back to gcloud ADC. GEMINI_LOCATION lets us pick regional vs. global
+# routing — set it to "global" if you ever see a 404 on the model name.
+try:
+    project_id = os.environ.get("PROJECT_ID") or ""
+    if not project_id:
+        _, project_id = google.auth.default()
+    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id or ""
+    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GEMINI_LOCATION") or "global"
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+except Exception as e:
+    print(f"Warning: Could not configure Vertex AI Auth natively: {e}")
 
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
-image_generation_model = "gemini-3.1-flash-image-preview"
 
-generate_content_config = types.GenerateContentConfig(
-    tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig())
-)
 
-# --- Structured Pydantic Schemas ---
-
+# ----------------------------------------------------------------------------
+# Pydantic schemas
+# ----------------------------------------------------------------------------
+# These drive ADK's structured output: when an LlmAgent has `output_schema`
+# set, the framework forces the model to emit a JSON object matching the
+# schema and downstream nodes receive it as a `dict`. See the node_input
+# table at https://adk.dev/workflows/data-handling/.
 
 class Citation(BaseModel):
     title: str = Field(description="Title of the source")
     url: str = Field(description="URL of the source")
-
-
-class SearchResult(BaseModel):
-    content: str = Field(description="The factual content found")
 
 
 class ArticleDraft(BaseModel):
@@ -47,19 +98,21 @@ class ArticleDraft(BaseModel):
 
 
 class Article(ArticleDraft):
-    citations: list[Citation] = Field(description="Sources used in this article")
+    citations: list[Citation] = Field(default_factory=list, description="Sources used")
+    # Required by Google Search Grounding terms — the chip HTML must be
+    # displayed alongside the grounded article. See the orchestrator below
+    # for where this gets populated and the README for the compliance walk-through.
+    search_entry_point_html: Optional[str] = Field(
+        default=None, description="Google Search Suggestion chip HTML"
+    )
 
 
 class NewspaperPage(BaseModel):
-    articles: list[Article] = Field(
-        description="Collection of articles for the front page"
-    )
+    articles: list[Article] = Field(description="Collection of front-page articles")
 
 
 class TopicPlan(BaseModel):
-    topics: list[str] = Field(
-        description="A list of specific beats or topics to investigate."
-    )
+    topics: list[str] = Field(description="Specific beats to investigate")
 
 
 def get_current_server_time() -> str:
@@ -67,286 +120,143 @@ def get_current_server_time() -> str:
     return f"The current server time is {now.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}"
 
 
-# --- Native Grounding Callbacks ---
+# ----------------------------------------------------------------------------
+# Pipeline nodes
+# ----------------------------------------------------------------------------
+# Each node's return value is auto-forwarded as the next node's `node_input`.
+# That means the orchestrator receives the planner's TopicPlan dict, the
+# researcher receives a single topic string, and the compiler receives the
+# orchestrator's list of Article dicts. No {state_key} interpolation in the
+# instructions — they're pure system prompts.
 
-
-def make_citations_callback(agent_name: str, output_key: str):
-    async def extract_citations_callback(callback_context: CallbackContext) -> None:
-        """
-        Extracts citations from the LLM's grounding metadata.
-
-        THE PROBLEM: LLMs are notoriously bad at generating accurate URLs. If you ask
-        an LLM to output a `Citation` Pydantic object, it will likely invent a fake URL
-        that looks plausible but returns a 404 error.
-
-        THE SOLUTION: When using Vertex AI Search via ADK's `google_search` tool, the
-        underlying Vertex API attaches highly accurate, deterministic `grounding_metadata`
-        to the ADK Event stream.
-
-        This `after_agent_callback` runs immediately after the LLM finishes drafting the
-        article. It traverses the Event stream, finds the true URLs supplied by Google
-        Search, and forcefully overwrites the LLM's hallucinated citations in the
-        structured Pydantic state with the verified URLs.
-        """
-        session = callback_context._invocation_context.session
-        citations = []
-        seen_urls = set()
-
-        # Traverse events in reverse to find the latest grounding chunks for this agent
-        for event in reversed(session.events):
-            if not getattr(event, "grounding_metadata", None):
-                continue
-            if not getattr(event.grounding_metadata, "grounding_chunks", None):
-                continue
-            if event.author != agent_name:
-                continue
-
-            for chunk in event.grounding_metadata.grounding_chunks:
-                if getattr(chunk, "web", None) and chunk.web.uri not in seen_urls:
-                    seen_urls.add(chunk.web.uri)
-                    citations.append(
-                        {
-                            "title": getattr(chunk.web, "title", "No Title"),
-                            "url": chunk.web.uri,
-                        }
-                    )
-            break  # Only process the final response
-
-        # Inject the deterministic citations into the structured state!
-        print(
-            f"[DEBUG] {agent_name} generated {len(citations)} citations from grounding chunks."
-        )
-        if output_key and output_key in callback_context.state:
-            state_val = callback_context.state[output_key]
-            # Replace hallucinated citations with the true grounding URLs
-            if hasattr(state_val, "citations"):
-                state_val.citations = [Citation(**c) for c in citations]
-                print(
-                    f"[DEBUG] Pydantic citations overridden to array of length {len(state_val.citations)}"
-                )
-            elif isinstance(state_val, dict):
-                state_val["citations"] = citations
-                print(
-                    f"[DEBUG] Dict citations overridden to array of length {len(state_val['citations'])}"
-                )
-            elif isinstance(state_val, str):
-                # Store citations explicitly as strongly typed dictionaries in a parallel state key
-                # We use .model_dump() to ensure JSON serializability for SqliteSessionService
-                citations_key = f"{output_key}_citations"
-                callback_context.state[citations_key] = [Citation(**c).model_dump() for c in citations]
-                print(f"[DEBUG] Stored {len(citations)} dictionary citations in parallel state key: {citations_key}")
-
-    return extract_citations_callback
-
-
-async def prepare_drafts_callback(callback_context: CallbackContext) -> None:
-    articles_data = []
-    for i in range(100):
-        key = f"article_{i}"
-        val = callback_context.state.get(key)
-        
-        if val is not None:
-            # Retrieve the parallel strongly-typed citation dicts
-            citations_dict = callback_context.state.get(f"{key}_citations", [])
-            
-            articles_data.append({
-                "content": val,
-                "citations": citations_dict
-            })
-    import json
-
-    serialized = []
-    for art in articles_data:
-        # art is now a dictionary containing "content" (str) and "citations" (List[dict])
-        serialized.append(art)
-        
-    callback_context.state["draft_articles"] = json.dumps(serialized, indent=2)
-
-
-# --- Agents & Workflows ---
-
-planner_agent = Agent(
+planner_agent = LlmAgent(
     name="planner_agent",
     model=worker_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are a senior news editor. 
-    Given a broad news request from the user, generate a structured plan of at least 3 specific topics or "beats" to assign to your research team.
-    Unless the user requests otherwise, ensure the topics strictly focus on recent developments from the past 3 days.
-    Use Google Search to execute a first pass to discover the most important beats.
-    
-    IMPORTANT: You must output ONLY a raw JSON array of strings containing the topics. Do not include markdown blocks, text, or the `TopicPlan` wrapper.
-    Example output exactly like this:
-    ["AI advancements in healthcare", "New open source foundation models", "Regulatory changes in EU AI Act"]
+    You are a senior news editor. Given a broad news request from the user,
+    generate a structured plan of at least 3 specific topics or "beats" to
+    assign to your research team. Unless the user requests otherwise, focus
+    on recent developments from the past 3 days. Use Google Search to discover
+    the most important beats first.
     """,
     tools=[google_search],
-    output_key="topic_plan",
+    output_schema=TopicPlan,
 )
 
 
-def create_research_agent(topic: str, index: int) -> Agent:
-    agent_name = f"researcher_{index}"
-    out_key = f"article_{index}"
-    return Agent(
-        name=agent_name,
-        model=worker_model,
-        instruction=f"""
-        The current date and time is: {get_current_server_time()}
-        
-        You are an expert investigative journalist. Research the following beat thoroughly: {topic}.
-        Draft a high-quality, engaging article about your findings. Ensure your article has a catchy headline, a short engaging teaser, and the full content body.
-        Your final output must be in Markdown format. Use Google Search to gather factual information.
-        """,
-        tools=[google_search],
-        output_key=out_key,
-        after_agent_callback=make_citations_callback(agent_name, out_key),
-    )
+# A single, shared researcher template. The orchestrator below spawns N
+# parallel sub-runs of this same agent — one per topic — via ctx.run_node.
+# Each sub-run gets its own LLM context but writes events into the parent
+# workflow's session.events stream (see the orchestrator note below).
+researcher_agent = LlmAgent(
+    name="researcher",
+    model=worker_model,
+    instruction=f"""
+    The current date and time is: {get_current_server_time()}
+
+    You are an expert investigative journalist. Research the following beat
+    thoroughly. Draft a high-quality, engaging article with a catchy headline,
+    a short engaging teaser, and the full content body. Output in Markdown
+    format. Use Google Search to gather factual information.
+    """,
+    tools=[google_search],
+    output_schema=Article,
+)
 
 
-class ParallelResearcherFactory(BaseAgent):
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
-        plan_raw = ctx.session.state.get("topic_plan")
-        if not plan_raw:
-            return
+# Replaces the 1.x ParallelResearcherFactory(BaseAgent) hand-rolled fan-out.
+# The canonical dynamic-parallelism pattern from
+# https://adk.dev/workflows/dynamic/ is `asyncio.gather(*[ctx.run_node(...)])`.
+#
+# Why `rerun_on_resume=True` is required: parent nodes that call ctx.run_node
+# must opt into rerun-on-resume so an interrupted workflow can re-launch the
+# parallel children without losing state.
+#
+# Citation attribution caveat: every parallel ctx.run_node call shares one
+# `session.events` stream, and Python asyncio runs each coroutine up to its
+# first `await` synchronously — so all `research_one` tasks capture the
+# same `start` index. As tasks complete, each captures `end` at its own
+# moment, but the slice [start:end] picks up grounding chunks emitted by
+# *peers* that happened to finish earlier. The resulting per-article
+# citation list is a SUPERSET of that researcher's real grounding chunks.
+# For workshop purposes this is acceptable — see utils/citations.py and
+# the README for the long-form discussion plus the cleaner alternative.
+@node(rerun_on_resume=True)
+async def research_orchestrator(ctx: Context, node_input: dict) -> list:
+    topics = node_input.get("topics", []) if isinstance(node_input, dict) else []
+    print(f"[DEBUG] research_orchestrator: spawning {len(topics)} researchers")
 
-        import json
-        import re
-        try:
-            # Strip potential markdown formatting
-            plan_str = plan_raw.strip().strip("```json").strip("```").strip()
-            # Use regex to find the first array structure in case the LLM added conversational filler
-            match = re.search(r'\[.*\]', plan_str, flags=re.DOTALL)
-            if match:
-                plan_str = match.group(0)
-            topics = json.loads(plan_str)
-        except json.JSONDecodeError:
-            print(f"Failed to parse topics from planner output: {plan_raw}")
-            return
-
-        researchers = [
-            create_research_agent(topic, i) for i, topic in enumerate(topics)
-        ]
-
-        parallel_runner = ParallelAgent(
-            name="parallel_research_executor", sub_agents=researchers
+    async def research_one(topic: str, idx: int) -> dict:
+        start = len(ctx.session.events)
+        article = await ctx.run_node(researcher_agent, node_input=topic)
+        end = len(ctx.session.events)
+        citations, rendered = extract_citations_from_events(
+            ctx.session.events[start:end]
         )
+        print(
+            f"[DEBUG] researcher[{idx}] '{topic[:60]}': "
+            f"{len(citations)} citations from events {start}..{end}"
+        )
+        if isinstance(article, dict):
+            article["citations"] = citations
+            if rendered:
+                # Required for Google Search Grounding TOS compliance.
+                article["search_entry_point_html"] = rendered
+        return article
 
-        async for event in parallel_runner.run_async(ctx):
-            yield event
+    tasks = [research_one(t, i) for i, t in enumerate(topics)]
+    return await asyncio.gather(*tasks)
 
 
-research_team = ParallelResearcherFactory(name="research_team")
-
-
-compiler_agent = Agent(
+compiler_agent = LlmAgent(
     name="compiler_agent",
     model=pro_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are the news editor-in-chief. 
-    Here are the drafted articles from your reporters, including their true and final citations:
-    {{draft_articles}}
+    You are the news editor-in-chief. The previous step provided drafted
+    articles from your reporters, each with their true citations.
 
-    Read all of these drafted articles. Choose the best ones, drop or merge duplicates, evaluate them for quality, and compile them into a cohesive final `NewspaperPage`.
+    Read the drafts. Choose the best ones, drop or merge duplicates, evaluate
+    them for quality, and compile them into a cohesive final NewspaperPage.
 
-    CRITICAL INSTRUCTION: You must strictly preserve the exact `citations` array provided for each article in the data above. If an article's `citations` array is empty `[]`, you MUST output an empty array for that article. DO NOT invent, hallucinate, or infer any URLs.
+    CRITICAL: You must strictly preserve each article's exact `citations`
+    array and `search_entry_point_html` value. If an article's `citations`
+    array is empty `[]`, output an empty array. DO NOT invent, hallucinate,
+    edit, or modify any URLs or HTML. The search_entry_point_html is
+    required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
+    # Persist the compiled NewspaperPage to session.state['compiled_news'] so
+    # downstream consumers can pick it up after the workflow finishes. The
+    # AI Newsroom web app introduced in mod04 (see modules/04-vector-search/README.md
+    # → "Embedding a Runner") is the consumer this hook is here for; for
+    # mod03 it just demonstrates the session-state contract.
     output_key="compiled_news",
-    before_agent_callback=prepare_drafts_callback,
 )
 
-news_pipeline = SequentialAgent(
-    name="news_pipeline",
-    description="A specialized research pipeline that plans queries, executes searches in parallel, and compiles a comprehensive newspaper. Use this whenever the user asks for news.",
-    sub_agents=[planner_agent, research_team, compiler_agent],
+
+# ----------------------------------------------------------------------------
+# Top-level Workflow
+# ----------------------------------------------------------------------------
+# Edges define the strict left-to-right pipeline. The terminal node's output
+# (compiler_agent's NewspaperPage) becomes the workflow's final output. No
+# conversational outer LlmAgent — the Workflow IS the root, since this is
+# a single-purpose newsroom pipeline.
+
+root_agent = Workflow(
+    name="news_workflow",
+    edges=[
+        ("START", planner_agent),
+        (planner_agent, research_orchestrator),
+        (research_orchestrator, compiler_agent),
+    ],
 )
 
-root_agent = Agent(
-    name="root_agent",
-    model=worker_model,
-    instruction="""
-    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
-    whenever a user asks you to look up news; otherwise, answer the user's query directly.
-    """,
-    sub_agents=[news_pipeline],
-)
 
 app = App(
     root_agent=root_agent,
     name="app",
 )
-
-
-async def main():
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
-    
-    print("Starting pipeline execution...")
-    
-    project_id = os.environ.get("PROJECT_ID", "luissala-vertex-sandbox")
-    os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
-    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
-
-    # 1. Define Unique Identifiers
-    session_id = "test_pipeline"
-    user_id = "test_user"
-    app_name = "test_app"
-
-    # 2. Formulate the initial prompt
-    query = "What's the latest news on AI Agents from OpenAI, Google, Anthropic, and any other industry leaders?"
-
-    # 3. Initialize Services
-    session_service = InMemorySessionService()
-    runner = Runner(
-        app_name=app_name, agent=root_agent, session_service=session_service
-    )
-
-    try:
-        # 4. Create the session explicitly
-        await session_service.create_session(
-            app_name=app_name, user_id=user_id, session_id=session_id
-        )
-
-        # 5. Format the message
-        user_message = types.Content(role="user", parts=[types.Part(text=query)])
-
-        print(f"Running query: {query}")
-        print("Executing ADK pipeline... (this may take several minutes)")
-
-        # 6. Execute the runner
-        async for event in runner.run_async(
-            user_id=user_id, session_id=session_id, new_message=user_message
-        ):
-            if event.is_final_response() and event.content:
-                for part in event.content.parts:
-                    if part.text:
-                        print(f"[{event.author}]: {part.text}")
-
-        print(f"DEBUG Registry: {session_service.sessions}")
-
-        # 7. Retrieve the populated state AFTER execution completes
-        current_session = await session_service.get_session(
-            app_name=runner.app_name, user_id=user_id, session_id=session_id
-        )
-
-        # 8. Extract the compiled newspaper from the final state
-        compiled = current_session.state.get("compiled_news", {})
-
-        print("-" * 80)
-        print("FINAL COMPILED NEWSPAPER:")
-        print(json.dumps(compiled, indent=2))
-
-    except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

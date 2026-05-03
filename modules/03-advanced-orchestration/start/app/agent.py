@@ -1,93 +1,139 @@
-# MODULE 03-ADVANCED-ORCHESTRATION: START
+# MODULE 03 — Advanced Orchestration: START
+#
+# In this module you'll evolve the linear pipeline below (your mod02
+# solution) into a dynamic-parallel pipeline that spawns N researchers
+# based on a planner's topic list, then collects verified citations from
+# the underlying Google Search grounding metadata.
+#
+# Your destination:
+#                                  +---> researcher[0]
+#                                  |
+#       START --> planner_agent ---+---> researcher[1]   --> compiler_agent
+#                  (TopicPlan)     |   (asyncio.gather)       (NewspaperPage,
+#                                  +---> researcher[…]         output_key
+#                                  research_orchestrator       "compiled_news")
+#                                  (@node, rerun_on_resume)
+#
+# What you'll build (follow modules/03-advanced-orchestration/README.md):
+#   - Add Pydantic schemas: Citation, ArticleDraft, Article, NewspaperPage,
+#     TopicPlan (replaces SearchPlan from mod02)
+#   - Replace research_agent with a single shared researcher_agent template
+#     (LlmAgent with output_schema=Article, tools=[google_search])
+#   - Add a research_orchestrator @node(rerun_on_resume=True) that uses
+#     asyncio.gather(ctx.run_node(researcher_agent, …)) to spawn N parallel
+#     sub-runs based on the TopicPlan
+#   - Pull verified citation URLs from each researcher's session.events
+#     slice via utils.citations.extract_citations_from_events
+#   - Update compiler_agent: output_schema=NewspaperPage, output_key="compiled_news"
+#     (the output_key publishes the result to session state so external
+#     consumers can read it — you'll see why this matters in mod04, where
+#     the AI Newsroom web app reads from this key)
+#
+# Key references:
+#   * Dynamic parallelism via
+#     ctx.run_node + asyncio ........... https://adk.dev/workflows/dynamic/
+#   * Data flow between nodes .......... https://adk.dev/workflows/data-handling/
+#   * Google Search Grounding (display
+#     requirements MUST be honored) .... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 
 import datetime
-import os
-import google.auth
+
+from google.adk.agents import LlmAgent
+from google.adk.apps import App
+from google.adk.tools import google_search
+from google.adk.workflow import Workflow
+
+from dotenv import load_dotenv, find_dotenv
 from pydantic import BaseModel, Field
 
-from google.adk.agents import Agent, SequentialAgent
-from google.adk.apps import App
-from google.adk.tools import AgentTool
-from google.adk.tools import google_search
-
+load_dotenv(find_dotenv())
 
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
-image_generation_model = "gemini-3.1-flash-image-preview"
 
+
+# --- Structured Pydantic Schemas ---
+# When an LlmAgent has `output_schema` set, ADK forces the model to emit a
+# JSON object matching the schema and downstream nodes receive it as a
+# `dict`. See the node_input table at https://adk.dev/workflows/data-handling/.
 
 class SearchPlan(BaseModel):
     queries: list[str] = Field(
-        description="A list of 2 to 3 very specific Google Search queries to research."
+        description="2-3 very specific Google Search queries to research."
     )
 
 
 def get_current_server_time() -> str:
-    """Simulates getting the current local server time.
-
-    Returns:
-        A string with the current time information.
-    """
     now = datetime.datetime.now().astimezone()
     return f"The current server time is {now.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}"
 
 
-planner_agent = Agent(
+# --- Pipeline nodes ---
+# Each node's return value is auto-forwarded as the next node's `node_input`.
+# That means the research_agent receives the SearchPlan dict as its user
+# message, and the compiler receives the research_agent's text output. No
+# {state_key} interpolation, no output_key plumbing for intermediate steps.
+
+planner_agent = LlmAgent(
     name="planner_agent",
     model=worker_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are a senior news editor. 
-    Given a broad news topic from the user, generate a structured plan of specific Google Search queries.
-    Ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
+    You are a senior news editor. Given a broad news topic from the user,
+    generate a structured plan of specific Google Search queries. Focus the
+    queries on recent developments from the past 3 days unless the user
+    requests otherwise.
     """,
     output_schema=SearchPlan,
-    output_key="search_plan",
 )
 
-research_agent = Agent(
+research_agent = LlmAgent(
     name="research_agent",
     model=worker_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are a news researcher. 
-    Look at the `{{search_plan}}` provided in the state. 
-    Execute Google Searches for each query listed. Return a rough compilation of all the facts you find.
+    You are a news researcher. The previous step has produced a SearchPlan
+    with a list of queries. Execute a Google Search for each query and
+    return a rough compilation of the facts you find.
     """,
     tools=[google_search],
-    output_key="search_results",
 )
 
-compiler_agent = Agent(
+compiler_agent = LlmAgent(
     name="compiler_agent",
     model=pro_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are the news editor-in-chief. 
-    Read the raw research provided in `{{search_results}}` via the state. 
-    Synthesize it into a cohesive, engaging final newspaper.
+    You are the news editor-in-chief. Read the raw research provided as input
+    and synthesize it into a cohesive, engaging final newspaper.
     """,
-    output_key="compiled_news",
 )
 
-news_pipeline = SequentialAgent(
-    name="news_pipeline",
-    description="A specialized research pipeline that plans queries, executes searches, and compiles a comprehensive newspaper. Use this whenever the user asks for news.",
-    sub_agents=[planner_agent, research_agent, compiler_agent],
+
+# --- Top-level Workflow ---
+# Edges define the strict left-to-right pipeline. The terminal node's output
+# becomes the workflow's output. No conversational outer LlmAgent — the
+# Workflow IS the root, since this is a single-purpose newsroom pipeline.
+#
+# Note: this module deliberately does NOT set `output_key="compiled_news"`
+# on the compiler. Mod02's compiler emits raw text; the webapp's persistence
+# guard requires structured output (NewspaperPage with an `articles` array),
+# which is introduced in mod03. Students running mod02 in `make run-webapp`
+# will see the live event log and a "[system] Agent finished" message at
+# the end — that's the intended behavior.
+
+root_agent = Workflow(
+    name="news_workflow",
+    edges=[
+        ("START", planner_agent),
+        (planner_agent, research_agent),
+        (research_agent, compiler_agent),
+    ],
 )
 
-root_agent = Agent(
-    name="root_agent",
-    model=worker_model,
-    instruction="""
-    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
-    whenever a user asks you to look up news; otherwise, answer the user's query directly.
-    """,
-    sub_agents=[news_pipeline],
-)
 
 app = App(
     root_agent=root_agent,

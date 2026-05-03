@@ -40,8 +40,11 @@ def main():
     elif args.command == "list-objects":
         print(f"Reading up to {args.limit} objects from the index...")
         objs = vs.list_objects(args.limit)
+        # The query_data_objects pager returns DataObject items directly
+        # (with .data_object_id and .data fields). The previous list_data_objects
+        # API wrapped each result in a parent envelope; the new API does not.
         for o in objs:
-            print(f"- [{o.data_object_id}] {o.data_object.data.get('title', '')}")
+            print(f"- [{o.data_object_id}] {o.data.get('title', '')}")
         if not objs:
             print("No indexed objects found.")
 

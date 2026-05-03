@@ -100,3 +100,16 @@ You can natively test multi-agent orchestration without writing eval tests or us
 - **Workshop Workflow (CRITICAL)**: NEVER write or edit code directly inside the `modules/` directory. ALL implementation must happen in `workspace/`.
 - **Agent Definitions**: Define static agents using standard variable assignments (e.g., `planner_agent = Agent(...)`) instead of wrapping them in factory functions (`def create_planner()`) to avoid unnecessary boilerplate.
 - **Diagram Aesthetics**: Ensure any future architecture diagrams generated for the curriculum strictly follow a clean, minimalist black-and-white flat-vector style. Do not use cyberpunk, neon, gradients, or 3D effects. Solid black backgrounds and crisp white boxes/arrows.
+- **Webapp persistence contract**: `webapp/app.py` reads `session.state.get("compiled_news")` after every run to write the persistent newsletter JSON and emit the SSE 'finish' payload. If the curriculum's terminal `LlmAgent` produces a structured `NewspaperPage` for the rendered grid, **it must set `output_key="compiled_news"`** — easy to drop during Workflow refactors. Pure-text terminal nodes (e.g. mod02's compiler) intentionally skip this; the webapp falls back to the diagnostic event log.
+
+---
+
+## ADK 2.0 Cheatsheet Overrides
+
+The bundled cheatsheet at `.agents/skills/google-agents-cli-adk-code/references/adk-2.0.md` is mostly accurate, but has at least one syntax error caught during the Workflow API migration. If a future agent in this repo follows the cheatsheet's documented form and Pydantic rejects it, prefer the override below.
+
+- **Conditional routing edges**: the cheatsheet shows `(source, target, "route")` 3-tuple syntax (Section 4 — Edge Patterns). This is **not accepted** by the actual `Workflow` model — it raises a Pydantic `literal_error`. The real API requires either:
+  - A `RoutingMap` dict: `(source, {"route_a": target_a, "route_b": target_b})`, or
+  - An explicit `Edge(from_node=..., to_node=..., route="route_a")` object.
+  See `.venv/lib/python3.12/site-packages/google/adk/workflow/_graph_definitions.py` for the authoritative `RouteValue` / `RoutingMap` / `Edge` type aliases.
+- **Don't compose pipelines via `LlmAgent.sub_agents=[…]`**: in 2.0, `sub_agents` is for **delegation targets** (mode-tagged child LlmAgents), not pipeline composition. Putting a `SequentialAgent`, `ParallelAgent`, or custom `BaseAgent` next to a regular `LlmAgent` peer in a parent's `sub_agents` list will crash with `AttributeError: '<WorkflowAgent>' object has no attribute 'mode'` the moment the LlmAgent peer is invoked (ADK's `agent_transfer.py` evaluates `peer_agent.mode` for every sibling). Compose pipelines with a `Workflow` (`google.adk.workflow.Workflow` + edges) instead. This regression is what motivated the workshop's whole 1.x → 2.0 migration.

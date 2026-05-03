@@ -1,38 +1,33 @@
 # Module 02: Agent Orchestration (The Newsroom)
 ![AI Newsroom Flowchart](./newsroom_pipeline.png)
-In this module, we move beyond a single agent and build a powerful multi-agent orchestration pattern using native ADK workflows. 
 
-You will build an AI "Newsroom". Rather than having one agent vaguely handle everything, you will create a pipeline: a **Planner** breaks down a broad user request into specific topics, a **Researcher** gathers information on those topics using real Google Search, and an **Editor** aggregates their findings into a final newscast. Finally, you will equip this entire pipeline to your main conversational agent using native LLM Delegation!
+In this module you'll move beyond a single agent and build a multi-agent **AI Newsroom** as a graph-based pipeline.
 
-### The Architecture 
+A **Planner** breaks down a broad user request into specific Google Search queries. A **Researcher** runs those queries with the built-in `google_search` tool. An **Editor-in-Chief** synthesizes the findings into a final newspaper. The whole thing is wired together with the new ADK 2.0 `Workflow` graph API.
 
-![AI Newsroom Flowchart](./newsroom_flowchart.png)
+> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** ADK 2.0 is in **Beta**. APIs may shift before GA — see the [ADK 2.0 overview](https://adk.dev/2.0/) for stability caveats.
+
+## Architecture
 
 ```mermaid
-flowchart TD
-    User([User]) --> R[Root Agent]
-    
-    subgraph News Pipeline
-      direction TB
-      P[Planner Agent] -->|search_plan JSON| RES[Research Agent]
-      RES -->|google_search| G[(Google)]
-      RES -->|search_results| C[Compiler Agent]
-    end
-
-    R -.->|Delegates via sub_agents| P
-    C -.->|compiled_news| R
-    R --> User
+flowchart LR
+    START([START]) --> P[planner_agent<br/>LlmAgent · output_schema=SearchPlan]
+    P -->|SearchPlan dict| R[research_agent<br/>LlmAgent · tools=google_search]
+    R -->|raw research text| C[compiler_agent<br/>LlmAgent · pro model]
+    C --> END([Final newspaper])
 ```
 
----
+The pipeline is a `Workflow` with three linear edges. Each node's return value becomes the next node's `node_input` — no `{state_var}` interpolation, no `output_key` plumbing for intermediate steps. See [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) for the exact data-flow rules.
+
+## Before You Begin
+
+After running `make catchup module=02` your workspace contains the **mod01 solution** — a single `Agent` with `get_weather` and `get_current_server_time` tools. Mod02 replaces this design entirely with a multi-agent Workflow, so you can delete (or comment out) the existing `root_agent`, `app`, `get_weather`, and the `Agent` / `Gemini` / `types` imports as you build up the new pipeline. The `import datetime` line and `get_current_server_time()` helper are still used.
 
 ## Your Objectives
 
-### 1. Preparation: Models and Time
-First, centralize your model strings at the top of `app/agent.py` to keep things clean. You will also create a helper function so agents know the current date (critical for fetching recent news).
+### 1. Centralize models and helpers
 
-<details>
-<summary>💡 Hint: Add these at the top of your file</summary>
+Pin model strings at the top of `workspace/app/agent.py` and add a small helper so agents always know the current date (critical for "recent news" queries).
 
 ```python
 import datetime
@@ -44,116 +39,110 @@ def get_current_server_time() -> str:
     now = datetime.datetime.now().astimezone()
     return f"The current server time is {now.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}"
 ```
-</details>
 
-### 2. Build the Editor-in-Chief (Planner Agent)
-Define an agent whose sole instruction is to take a broad user query and return a highly structured output list. To ensure the output is perfectly parseable, you will use ADK's `output_schema` parameter with a **Pydantic Model** and save the output to state using `output_key="search_plan"`.
+### 2. Build the Planner with a structured output schema
 
-<details>
-<summary>💡 Hint: Pydantic Schema</summary>
+Use `output_schema` with a Pydantic model. ADK forces the model to emit a JSON object matching the schema, and the next node receives it as a `dict` — no string parsing required.
 
 ```python
 from pydantic import BaseModel, Field
+from google.adk.agents import LlmAgent
 
 class SearchPlan(BaseModel):
     queries: list[str] = Field(
-        description="A list of 2 to 3 very specific Google Search queries to research."
+        description="2-3 very specific Google Search queries to research."
     )
-```
-</details>
 
-<details>
-<summary>💡 Hint: Planner Prompt</summary>
-
-```python
-planner_agent = Agent(
+planner_agent = LlmAgent(
     name="planner_agent",
     model=worker_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are a senior news editor. 
-    Given a broad news topic from the user, generate a structured plan of specific Google Search queries.
-    Ensure you instruct the searches to strictly focus on recent developments from the past 3 days.
+    You are a senior news editor. Given a broad news topic from the user,
+    generate a structured plan of specific Google Search queries. Focus the
+    queries on recent developments from the past 3 days unless the user
+    requests otherwise.
     """,
     output_schema=SearchPlan,
-    output_key="search_plan",
 )
 ```
-</details>
 
-### 3. Build the Researcher 
-Create a second agent equipped with the `google_search` tool built into the ADK (`from google.adk.tools import google_search`). Tell it to read the `search_plan` generated by the previous agent!
+### 3. Build the Researcher with `google_search`
 
-<details>
-<summary>💡 Hint: Researcher Prompt</summary>
+ADK's built-in `google_search` tool grounds the researcher's output in real web results. Notice the instruction is now strictly a system prompt — no `{search_plan}` placeholder. The previous node's output (the `SearchPlan` dict) is auto-injected as the LLM's user message.
 
 ```python
-research_agent = Agent(
+from google.adk.tools import google_search
+
+research_agent = LlmAgent(
     name="research_agent",
     model=worker_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are a news researcher. 
-    Look at the `{{search_plan}}` provided in the state. 
-    Execute Google Searches for each query listed. Return a rough compilation of all the facts you find.
+    You are a news researcher. The previous step has produced a SearchPlan
+    with a list of queries. Execute a Google Search for each query and
+    return a rough compilation of the facts you find.
     """,
     tools=[google_search],
-    output_key="search_results",
 )
 ```
-*(Note: We use double braces `{{search_plan}}` so Python's f-string doesn't crash trying to evaluate ADK's dynamic state injection!)*
-</details>
 
-### 4. Build the Compiler 
-Create the final agent in the chain. Give it the `pro_model` for maximum writing quality, and instruct it to read the `{search_results}` to synthesize the final broadcast.
+### 4. Build the Compiler
 
-<details>
-<summary>💡 Hint: Compiler Prompt</summary>
+Final agent in the chain. Uses the `pro_model` for writing quality, no `output_schema` (just emits text — Module 03 introduces structured `NewspaperPage` output).
 
 ```python
-compiler_agent = Agent(
+compiler_agent = LlmAgent(
     name="compiler_agent",
     model=pro_model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
-    You are the news editor-in-chief. 
-    Read the raw research provided in `{{search_results}}` via the state. 
-    Synthesize it into a cohesive, engaging final newspaper.
+    You are the news editor-in-chief. Read the raw research provided as input
+    and synthesize it into a cohesive, engaging final newspaper.
     """,
-    output_key="compiled_news",
 )
 ```
-</details>
 
-### 5. Wire the Pipeline and Delegate!
-Wrap your three agents in a `SequentialAgent`. Finally, rather than mounting it as an `AgentTool`, mount the pipeline to your `root_agent` using LLM Delegation (`sub_agents`). This allows the LLM to decide natively when to trigger the research flow!
+### 5. Compose the Workflow
 
-<details>
-<summary>💡 Hint: Pipeline and Root Agent</summary>
+The `Workflow` IS the root agent — no conversational outer LlmAgent, no `sub_agents=[…]` delegation. Just three edges that map predecessor outputs to successor inputs.
 
 ```python
-news_pipeline = SequentialAgent(
-    name="news_pipeline",
-    description="A specialized research pipeline that plans queries, executes searches, and compiles a comprehensive newspaper. Use this whenever the user asks for news.",
-    sub_agents=[planner_agent, research_agent, compiler_agent],
+from google.adk.workflow import Workflow
+from google.adk.apps import App
+
+root_agent = Workflow(
+    name="news_workflow",
+    edges=[
+        ("START", planner_agent),
+        (planner_agent, research_agent),
+        (research_agent, compiler_agent),
+    ],
 )
 
-root_agent = Agent(
-    name="root_agent",
-    model=worker_model,
-    instruction="""
-    You are a helpful, conversational AI. Delegate to `news_pipeline` sub-agent 
-    whenever a user asks you to look up news; otherwise, answer the user's query directly.
-    """,
-    sub_agents=[news_pipeline],
-)
+app = App(root_agent=root_agent, name="app")
 ```
-</details>
 
----
+📚 [adk.dev/workflows](https://adk.dev/workflows/) — full Workflow API reference.
+
+## Try it
+
+```bash
+make playground       # ADK Web on :8501 — pick the `app` folder when prompted
+```
+
+ADK Web's run pane shows the planner's `SearchPlan`, the researcher's tool calls, and the compiler's final newspaper text. Exercise the pipeline with prompts like *"Latest news on AI agents from the past three days."*
+
+## References & Further Reading
+
+- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (Beta status, install, stability caveats).
+- **Workflow API** — [adk.dev/workflows](https://adk.dev/workflows/) (nodes, edges, START — the mental model).
+- **Data flow between nodes** — [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) (how `node_input` is populated; structured output passing).
+- **Google Search Grounding** — [docs.cloud.google.com/vertex-ai/.../grounding-with-google-search](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search) (display requirements; relevant once you produce structured citations in Module 03).
+- **Repo-internal cheatsheet** — [`.agents/skills/google-agents-cli-adk-code/references/adk-2.0.md`](../../.agents/skills/google-agents-cli-adk-code/references/adk-2.0.md) (mostly accurate; see [GEMINI.md](../../GEMINI.md) → "ADK 2.0 Cheatsheet Overrides" for known errata).
 
 ## 🆘 Getting Stuck?
 
@@ -162,9 +151,11 @@ If you fall behind or your code isn't working, you can instantly catch up to the
 ```bash
 make catchup module=03
 ```
-*(Note: This will completely overwrite your current `workspace/` with the known good baseline for the next module!)*
 
-## References & Further Reading
-*   **[Sequential agents Guide](https://google.github.io/adk-docs/agents/workflow-agents/sequential-agents/)**: The primary documentation for `SequentialAgent`, pipeline architecture, and passing control.
-*   **[Delegation and Multi-agent systems](https://google.github.io/adk-docs/agents/multi-agents/)**: Covers hierarchical agent structures, Shared Session State memory passing, and LLM-driven agent transfer (Delegation) via `sub_agents`.
-*   **[Hierarchical Workflow Automation Sample](https://github.com/google/adk-samples/tree/main/python/agents/hierarchical-workflow-automation)**: A concrete implementation demonstrating a hierarchical multi-agent system utilizing `sub_agents` and automated workflow orchestration.
+*(Note: this completely overwrites your current `workspace/` with the known-good baseline for the next module.)*
+
+To re-load the canonical Module 02 solution into your workspace:
+
+```bash
+make solve module=02
+```

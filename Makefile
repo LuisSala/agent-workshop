@@ -10,7 +10,7 @@ help:
 	@echo "| Agent Workshop Development Commands                                         |"
 	@echo "==============================================================================="
 	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
-	@echo "  make run-webapp     - Launch the AI Newsroom Web UI directly"
+	@echo "  make run-webapp     - Launch the AI Newsroom Web UI (Module 04 demo)"
 	@echo "  make run-slides     - Launch the interactive Marimo Workshop Slideshow"
 	@echo "  make test           - Run unit and integration tests"
 	@echo "  make eval           - Run agent evaluation using ADK evalsets"
@@ -45,10 +45,23 @@ playground:
 	@echo "|                                                                             |"
 	@echo "| 🔍 IMPORTANT: Select the 'app' folder to interact with your agent.          |"
 	@echo "==============================================================================="
-	uv run adk web workspace --port 8501 --reload_agents
+	uv run adk web workspace --host 0.0.0.0 --port 8501 --reload_agents
 
-# Launch Flask Newsroom UI
+# Launch Flask Newsroom UI (mod04 demo — embeds an ADK Runner into Flask)
 run-webapp:
+	@if ! grep -q "from utils.vector_store" workspace/app/agent.py 2>/dev/null; then \
+		echo "==============================================================================="; \
+		echo "| ⚠️  WARNING: workspace/app/agent.py doesn't import utils.vector_store.       |"; \
+		echo "|                                                                             |"; \
+		echo "| The AI Newsroom web app is the Module 04 demo — it expects an agent that   |"; \
+		echo "| produces a structured NewspaperPage so the front-end can render the grid.  |"; \
+		echo "| Earlier modules (01-03) won't render correctly here; use 'make playground' |"; \
+		echo "| (ADK Web) for those instead.                                                |"; \
+		echo "|                                                                             |"; \
+		echo "| To load the Module 04 solution:  make solve module=04                       |"; \
+		echo "==============================================================================="; \
+		echo; \
+	fi
 	@echo "==============================================================================="
 	@echo "| 📰 Starting your AI Newsroom Web UI...                                      |"
 	@echo "|                                                                             |"
