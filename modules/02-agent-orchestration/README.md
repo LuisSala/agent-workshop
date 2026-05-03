@@ -19,6 +19,10 @@ flowchart LR
 
 The pipeline is a `Workflow` with three linear edges. Each node's return value becomes the next node's `node_input` — no `{state_var}` interpolation, no `output_key` plumbing for intermediate steps. See [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) for the exact data-flow rules.
 
+## Before You Begin
+
+After running `make catchup module=02` your workspace contains the **mod01 solution** — a single `Agent` with `get_weather` and `get_current_server_time` tools. Mod02 replaces this design entirely with a multi-agent Workflow, so you can delete (or comment out) the existing `root_agent`, `app`, `get_weather`, and the `Agent` / `Gemini` / `types` imports as you build up the new pipeline. The `import datetime` line and `get_current_server_time()` helper are still used.
+
 ## Your Objectives
 
 ### 1. Centralize models and helpers
