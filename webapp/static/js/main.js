@@ -45,17 +45,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const fullQuery = prefix + queryValue;
         const evtSource = new EventSource(`/stream?query=${encodeURIComponent(fullQuery)}`);
         
+        // The diagnostic event log shows the raw stream of agent emissions. Some
+        // emissions (e.g. the compiler's final NewspaperPage JSON) embed HTML
+        // for the Google Search Suggestion chip — if we used innerHTML the
+        // browser would attempt to render that HTML inline, which fails on the
+        // chip's escaped SVG attributes and produces 80+ console errors. The
+        // chip belongs in the article modal (rendered as innerHTML there for
+        // grounding-display compliance), not in the live event log. We display
+        // event content as plain text here.
+        const escapeHtml = (s) => String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+
         evtSource.onmessage = (e) => {
             const payload = JSON.parse(e.data);
-            
+
             if (payload.type === "event") {
                 const line = document.createElement("div");
                 line.className = "term-line";
                 let content = payload.text || payload.tool || "Working...";
-                line.innerHTML = `<span class="term-author">[${payload.author}]</span> ${content}`;
+                line.innerHTML = `<span class="term-author">[${escapeHtml(payload.author)}]</span> ${escapeHtml(content)}`;
                 termOutput.appendChild(line);
                 termOutput.scrollTop = termOutput.scrollHeight;
-            } 
+            }
             else if (payload.type === "finish") {
                 evtSource.close();
                 if (payload.data && payload.data.articles && payload.data.articles.length > 0) {

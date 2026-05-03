@@ -267,6 +267,10 @@ compiler_agent = LlmAgent(
     required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
+    # output_key persists the compiled result to session.state['compiled_news'],
+    # which webapp/app.py reads after the run to write the persistent newsletter
+    # JSON and emit the SSE 'finish' payload to the front-end.
+    output_key="compiled_news",
 )
 
 
@@ -295,6 +299,8 @@ archive_reader_agent = LlmAgent(
     """,
     tools=[search_news_archive],
     output_schema=NewspaperPage,
+    # See compiler_agent — same persistence/SSE contract for the archive branch.
+    output_key="compiled_news",
 )
 
 
