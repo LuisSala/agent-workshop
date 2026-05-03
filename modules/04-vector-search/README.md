@@ -184,18 +184,58 @@ If you ever modify the rendering path (e.g. switch the webapp from innerHTML to 
 
 ## Try it
 
+This is the workshop's first encounter with the **AI Newsroom web app** — a Flask + Server-Sent-Events front-end that embeds an ADK `Runner` directly. In modules 1-3 you used `make playground` (ADK Web) to inspect agents during development; mod04 introduces the alternate path of shipping your agent inside your own UI.
+
 ```bash
 make run-webapp     # http://127.0.0.1:8510 — Flask UI with Search Archives button
 ```
 
 The "Search Archives" button at the top of the dashboard prepends "Search the archive for past news on:" to your query, which the router picks up via the `archive` keyword. A blank "Look up news" query is routed to the live-research path.
 
-You can also drive the agent from the CLI:
+You can still drive the agent from ADK Web or the CLI for development:
 
 ```bash
-uv run adk run workspace/app
-# then type your query and press Enter
+make playground                  # ADK Web on :8501
+uv run adk run workspace/app     # CLI runner — type your query and press Enter
 ```
+
+## Embedding a Runner: how the AI Newsroom web app works
+
+ADK Web and `adk run` are great for debugging, but real applications usually need to drive the agent from inside a custom UI. This module's web app at [`webapp/app.py`](../../webapp/app.py) is a 175-line Flask example of that pattern. The key idea: **construct your own `Runner`, stream its events to the front-end, and read the final state out of the session yourself.**
+
+### Architecture
+
+```mermaid
+flowchart LR
+    Browser([Browser]) -->|GET /stream?query=…| Flask[Flask /stream]
+    Flask -->|Thread + asyncio| Runner[ADK Runner<br/>InMemorySessionService]
+    Runner -->|run_async| WF[news_workflow<br/>Workflow]
+    WF -->|events| Runner
+    Runner -->|each event<br/>→ q.put| Q[(Thread queue)]
+    Q -->|drain → SSE| Flask
+    Flask -->|text/event-stream| Browser
+    Runner -->|after run<br/>state.get| State[session.state<br/>compiled_news]
+    State -->|JSON file + SSE finish| Flask
+    Browser -->|renders article grid<br/>+ chip + sources| User([User])
+```
+
+### Three contracts to memorize
+
+1. **The `Runner` is per-session.** [`webapp/app.py`](../../webapp/app.py) instantiates `Runner(app_name=…, agent=root_agent, session_service=session_service)` *inside the per-request worker thread* and calls `await session_service.create_session(...)` first. Reusing a Runner across concurrent requests would risk state collisions in the in-memory session service.
+2. **Events stream out as the workflow runs.** The webapp iterates `async for event in runner.run_async(...)` and pushes each event onto a `queue.Queue`. A separate generator (the `/stream` route handler) drains the queue and emits Server-Sent Events to the browser, which renders them in the diagnostic event log. This is what lets students *see* the planner, then the parallel researchers, then the compiler arrive in real time.
+3. **The final result is read from session state, not from the event stream.** After `runner.run_async` returns, the webapp does `session = await session_service.get_session(...); compiled = session.state.get("compiled_news", {})`. **This is why `compiler_agent` and `archive_reader_agent` set `output_key="compiled_news"`** — without it the state lookup returns `{}` and the front-end can't render the grid.
+
+### The front-end side
+
+[`webapp/static/js/main.js`](../../webapp/static/js/main.js) is the browser companion. Three things worth knowing:
+
+- It opens an `EventSource` to `/stream?query=...` and renders each `event` payload as a line in the diagnostic log (HTML-escaped, so the chip's SVG doesn't try to render twice).
+- When the `finish` payload arrives, it transitions to the rendered article grid by calling `renderNews(payload.data)`.
+- In the article modal, `article.search_entry_point_html` is written via `innerHTML` so the chip's inline `@media(prefers-color-scheme)` styles render unmodified — required by the [Google Search Grounding display terms](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search).
+
+### When to use this pattern instead of ADK Web
+
+`make playground` is for the *developer* — interactive runs, drilling into events, no UI work. The embedded-`Runner` pattern is for *end users* of your agent — when you need a custom branded UI, custom routing or auth, or to integrate the agent into an existing application. The file at `webapp/app.py` is small and copy-able as a starting point for your own embedding.
 
 ## References & Further Reading
 
