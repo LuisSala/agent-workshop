@@ -131,11 +131,10 @@ app = App(root_agent=root_agent, name="app")
 ## Try it
 
 ```bash
-make playground       # ADK web UI on :8501
-make run-webapp       # Newsroom UI on :8510
+make playground       # ADK Web on :8501 — pick the `app` folder when prompted
 ```
 
-> ℹ️ **What you'll see in the webapp**: Module 02's compiler emits raw text rather than a structured `NewspaperPage`, so the webapp's "rendered article grid" path doesn't fire — you'll see the live diagnostic event log followed by an "Agent finished, see terminal output above" message. The grid view is introduced in Module 03 once `output_schema=NewspaperPage` lands.
+ADK Web's run pane shows the planner's `SearchPlan`, the researcher's tool calls, and the compiler's final newspaper text. Exercise the pipeline with prompts like *"Latest news on AI agents from the past three days."*
 
 ## References & Further Reading
 

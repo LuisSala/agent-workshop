@@ -25,8 +25,9 @@
 #   - Pull verified citation URLs from each researcher's session.events
 #     slice via utils.citations.extract_citations_from_events
 #   - Update compiler_agent: output_schema=NewspaperPage, output_key="compiled_news"
-#     (the output_key is what makes the webapp render the result; without
-#     it the front-end falls back to the diagnostic event log)
+#     (the output_key publishes the result to session state so external
+#     consumers can read it — you'll see why this matters in mod04, where
+#     the AI Newsroom web app reads from this key)
 #
 # Key references:
 #   * Dynamic parallelism via

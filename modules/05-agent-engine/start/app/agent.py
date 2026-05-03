@@ -267,9 +267,10 @@ compiler_agent = LlmAgent(
     required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
-    # output_key persists the compiled result to session.state['compiled_news'],
-    # which webapp/app.py reads after the run to write the persistent newsletter
-    # JSON and emit the SSE 'finish' payload to the front-end.
+    # output_key publishes the compiled result to session.state['compiled_news'].
+    # The AI Newsroom web app reads this from outside the workflow to render
+    # the article grid — see modules/04-vector-search/README.md → "Embedding a
+    # Runner" for the full integration walk-through.
     output_key="compiled_news",
 )
 

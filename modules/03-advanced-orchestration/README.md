@@ -205,9 +205,10 @@ If you ever change the rendering path (e.g. switch the webapp from `innerHTML` t
 ## Try it
 
 ```bash
-make playground       # ADK web UI on :8501 (CLI-style interaction)
-make run-webapp       # Newsroom UI on :8510 (full rendered grid + modals)
+make playground       # ADK Web on :8501 — pick the `app` folder when prompted
 ```
+
+ADK Web's event view is the right tool for inspecting parallel pipelines like this one — you can watch the planner's TopicPlan land, then see N concurrent researcher invocations stream in interleaved, then the compiler's final NewspaperPage. (The custom AI Newsroom web app — `make run-webapp` — comes in mod04, which embeds an ADK `Runner` into a Flask front-end as a teaching example.)
 
 You can also drive the agent from the CLI:
 

@@ -222,10 +222,11 @@ compiler_agent = LlmAgent(
     required by Google's grounding terms — dropping it breaks compliance.
     """,
     output_schema=NewspaperPage,
-    # Persist the compiled NewspaperPage to session.state['compiled_news'].
-    # webapp/app.py reads this after the run to write the persistent newsletter
-    # JSON and emit the SSE 'finish' payload that triggers the front-end's
-    # transition from the diagnostic event log to the rendered article grid.
+    # Persist the compiled NewspaperPage to session.state['compiled_news'] so
+    # downstream consumers can pick it up after the workflow finishes. The
+    # AI Newsroom web app introduced in mod04 (see modules/04-vector-search/README.md
+    # → "Embedding a Runner") is the consumer this hook is here for; for
+    # mod03 it just demonstrates the session-state contract.
     output_key="compiled_news",
 )
 
