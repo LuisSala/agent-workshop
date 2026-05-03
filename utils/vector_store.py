@@ -55,15 +55,24 @@ def list_collections():
 
 
 def list_objects(page_size=10):
+    """List data objects in the collection.
+
+    Note: in google-cloud-vectorsearch>=0.7, listing was consolidated into the
+    DataObjectSearchServiceClient via `query_data_objects`. The earlier
+    `DataObjectServiceClient.list_data_objects` API was removed.
+    """
     project_id, location = get_project_and_location()
     collection_id = get_collection_id()
     parent = f"projects/{project_id}/locations/{location}/collections/{collection_id}"
-    _, data_client, _ = get_clients()
+    _, _, data_search_client = get_clients()
     try:
-        req = vectorsearch_v1beta.ListDataObjectsRequest(
-            parent=parent, page_size=page_size
+        req = vectorsearch_v1beta.QueryDataObjectsRequest(
+            parent=parent,
+            page_size=page_size,
+            output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"]),
         )
-        return list(data_client.list_data_objects(request=req))
+        # query_data_objects returns a pager that iterates DataObject results.
+        return list(data_search_client.query_data_objects(request=req))
     except Exception as e:
         print(f"Error listing objects: {e}")
         return []
