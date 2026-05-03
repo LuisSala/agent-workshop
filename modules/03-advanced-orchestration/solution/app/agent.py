@@ -159,6 +159,11 @@ compiler_agent = LlmAgent(
     edit, or modify any URLs or HTML.
     """,
     output_schema=NewspaperPage,
+    # Persist the compiled NewspaperPage to session.state['compiled_news'].
+    # webapp/app.py reads this after the run to write the persistent newsletter
+    # JSON and emit the SSE 'finish' payload that triggers the front-end's
+    # transition from the diagnostic event log to the rendered article grid.
+    output_key="compiled_news",
 )
 
 
