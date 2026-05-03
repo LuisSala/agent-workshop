@@ -1,37 +1,41 @@
-# MODULE 04 — Vector Search & Routing: START
+# MODULE 04 — Vector Search & Structured UI Integration: START
 #
-# In this module you'll add an archive branch to the news pipeline below
-# (your mod03 solution): a Vector Search-backed librarian that runs when
-# the user asks about *past* coverage instead of *fresh* news. The router
-# decides which branch fires.
+# In this module you'll add an archive branch to the newsroom (your mod03
+# solution sits below): a Vector Search-backed librarian that runs when
+# the user asks about *past* coverage instead of *fresh* news. The two
+# branches are exposed as INDEPENDENT Workflows; the AI Newsroom web app
+# (introduced in this module's "Embedding a Runner" section) picks which
+# one to invoke per request based on the UI button the user clicked.
 #
 # Your destination:
-#                                +-> planner_agent --> research_orchestrator
-#                                |                                              --> compiler_agent (terminal: news)
-#                       (route="news")                                                  |
-#       START --> router(@node) -+                                                      v
-#                                 |                                                NewspaperPage
-#                       (route="archive")                                               ^
-#                                 |                                                     |
-#                                 +-> archive_reader_agent (terminal: archive) ---------+
+#
+#   news_workflow (the existing mod03 pipeline, kept as-is):
+#       START --> planner_agent --> research_orchestrator --> compiler_agent
+#
+#   archive_workflow (new):
+#       START --> archive_reader_agent
 #
 # What you'll build (follow modules/04-vector-search/README.md):
-#   - A router @node that classifies the user's query and emits
-#     Event(output=node_input, route="news"|"archive")
 #   - A search_news_archive tool that delegates to utils.vector_store.search_archive
 #   - An archive_reader_agent (LlmAgent) with tools=[search_news_archive]
-#     and output_schema=NewspaperPage
-#   - A RoutingMap dict edge: (router, {"news": planner, "archive": archive_reader})
-#     — see the cheatsheet override note in GEMINI.md (the cheatsheet's
-#     (src, dst, "route") 3-tuple form is NOT supported)
-#   - Both terminal nodes need output_key="compiled_news" so the webapp
-#     renders results from either path
+#     and output_schema=NewspaperPage and output_key="compiled_news"
+#   - A second top-level Workflow (`archive_workflow`) wrapping the
+#     archive_reader_agent
+#   - root_agent = news_workflow (so ADK Web's `make playground` keeps
+#     working; the webapp imports both workflows directly)
+#
+# Why two workflows instead of one Workflow with a router @node? The user's
+# intent is already known at the UI layer (which button was clicked).
+# Asking the agent to re-derive it via keyword matching is brittle. See
+# the README's "Alternative: agent-level routing" section for trade-offs
+# and the canonical RoutingMap pattern if you want it.
 #
 # Key references:
-#   * Conditional routing (RoutingMap) . https://adk.dev/workflows/graph-routes/
-#   * Vertex AI Vector Search .......... https://docs.cloud.google.com/vertex-ai/vector-search/overview
+#   * Workflow overview ............... https://adk.dev/workflows/
+#   * Vertex AI Vector Search ......... https://docs.cloud.google.com/vertex-ai/vector-search/overview
+#   * Conditional routing (alternative) https://adk.dev/workflows/graph-routes/
 #   * Google Search Grounding (display
-#     requirements MUST be honored) .... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
+#     requirements MUST be honored) ... https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search
 
 import asyncio
 import datetime
