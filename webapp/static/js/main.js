@@ -36,14 +36,17 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.abs(hash);
     }
 
-    function triggerSearch(prefix, queryValue) {
+    function triggerSearch(mode, queryValue) {
         if (!queryValue) return;
 
         showScreen("terminal");
         termOutput.innerHTML = "";
-        
-        const fullQuery = prefix + queryValue;
-        const evtSource = new EventSource(`/stream?query=${encodeURIComponent(fullQuery)}`);
+
+        // mode picks the workflow on the server (news vs archive). The agent
+        // receives the raw query — no prefix-string trickery needed since
+        // the workflow selection happens at the application layer.
+        const url = `/stream?mode=${encodeURIComponent(mode)}&query=${encodeURIComponent(queryValue)}`;
+        const evtSource = new EventSource(url);
         
         // The diagnostic event log shows the raw stream of agent emissions. Some
         // emissions (e.g. the compiler's final NewspaperPage JSON) embed HTML
@@ -94,8 +97,8 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    liveSearchBtn.addEventListener("click", () => triggerSearch("Look up fresh news about: ", queryInput.value.trim()));
-    archiveSearchBtn.addEventListener("click", () => triggerSearch("Search the archive for past news on: ", queryInput.value.trim()));
+    liveSearchBtn.addEventListener("click", () => triggerSearch("news", queryInput.value.trim()));
+    archiveSearchBtn.addEventListener("click", () => triggerSearch("archive", queryInput.value.trim()));
 
     // Enter key submits (default to live search)
     queryInput.addEventListener("keydown", (e) => {
@@ -109,14 +112,14 @@ document.addEventListener("DOMContentLoaded", () => {
             queryInput.value = "";
             showScreen("input");
         } else {
-            triggerSearch("Look up fresh news about: ", q);
+            triggerSearch("news", q);
         }
     });
 
     navArchiveSearchBtn.addEventListener("click", () => {
         let q = navQueryInput.value.trim();
         if (q) {
-            triggerSearch("Search the archive for past news on: ", q);
+            triggerSearch("archive", q);
         }
     });
 
@@ -194,8 +197,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 data.forEach(item => {
                     const li = document.createElement("li");
                     const dateStr = new Date(item.timestamp * 1000).toLocaleString();
-                    const cleanQuery = item.query.replace('Look up fresh news about: ', '').replace('Search the archive for past news on: ', '');
-                    li.innerHTML = `<a href="#" data-id="${item.id}" style="color: #60a5fa; text-decoration: none; font-size: 0.95rem;">${cleanQuery}</a>
+                    // Older entries may include the legacy prefix — strip it for display.
+                    const cleanQuery = item.query
+                        .replace('Look up fresh news about: ', '')
+                        .replace('Search the archive for past news on: ', '');
+                    const modeIcon = item.mode === "archive" ? "📚" : "📰";
+                    li.innerHTML = `<a href="#" data-id="${item.id}" style="color: #60a5fa; text-decoration: none; font-size: 0.95rem;">${modeIcon} ${cleanQuery}</a>
                                     <span style="color:#666; font-size: 0.8rem; margin-left:10px;">${dateStr}</span>`;
                     
                     li.querySelector("a").addEventListener("click", (e) => {
