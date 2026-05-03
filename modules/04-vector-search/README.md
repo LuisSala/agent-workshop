@@ -149,7 +149,7 @@ archive_reader_agent = LlmAgent(
 )
 ```
 
-> ⚠️ **Known quirk**: when an `LlmAgent` has both `tools=[…]` and `output_schema`, some models try to fill the schema directly without calling the tool. If you see hallucinated archived articles instead of real ones, splitting into a search-tool node followed by a format-to-schema node is the cleanest fix.
+> 💡 **Tool-skipping risk**: when an `LlmAgent` has both `tools=[…]` and `output_schema`, some models try to fill the schema directly without calling the tool. The strong "Always search the archive first using `search_news_archive`" lead in the instruction is what keeps this honest in practice — verified by browser test: titles emitted by the agent matched the Vector Search collection exactly. If you mutate the instruction and notice hallucinated articles instead, the cleanest fix is to split this single agent into a search-tool node followed by a format-to-schema node.
 
 ### 5. Compose the top-level Workflow
 
