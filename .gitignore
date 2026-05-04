@@ -204,3 +204,6 @@ tools/a2a-inspector/
 
 # ADK Temp Files
 .adk/
+
+# playwright-cli session/snapshot scratch dir
+.playwright-cli/
