@@ -1,3 +1,14 @@
+---
+order: 5
+num: '05'
+title: Agent Engine
+description: |
+  Move the ADK agent from a local script to a managed lifecycle on Vertex AI Agent Engine — sessions, state, and traceable execution paths.
+duration: 60 min
+lessons: 0
+status: draft
+---
+
 # Module 05: Agent Engine
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]

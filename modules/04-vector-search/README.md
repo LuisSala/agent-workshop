@@ -1,3 +1,13 @@
+---
+order: 4
+num: '04'
+title: Vector Search
+description: |
+  Add a Vertex AI Vector Search archive lookup alongside the live-news pipeline, with conditional routing in the workflow and structured output the UI can render.
+duration: 75 min
+lessons: 5
+---
+
 # Module 04: Vector Search & Structured UI Integration
 
 In this module you will turn the Module 03 newsroom into a multi-purpose newsroom that **both** researches fresh news AND looks up archived stories from a Vertex AI Vector Search collection. You will:

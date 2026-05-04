@@ -104,6 +104,39 @@ You can natively test multi-agent orchestration without writing eval tests or us
 
 ---
 
+## Module README format (consumed by agentworkshop.dev)
+
+Each `modules/<NN>-<slug>/README.md` is rendered on **agentworkshop.dev**
+via a deterministic, one-way sync pipeline. The contract — required
+frontmatter shape, body conventions (headings, GFM callouts, code,
+images, internal links), and the auto-applied normalizations — lives in:
+
+```
+../agentworkshop.dev/docs/CONTENT_SYNC_CONTRACT.md
+```
+
+**When editing any `modules/*/README.md`, follow that contract.** The
+website's sync (`pnpm sync-content` in agentworkshop.dev) is regex-only,
+no LLM round-trip; it rejects READMEs that don't match the schema.
+
+Quick checklist for module README edits:
+
+- Keep the YAML frontmatter block at the very top (above the `# Module ...`
+  H1). The frontmatter shape is the source of truth for the website's
+  sidebar, card grid, and page header.
+- The `# Module ...` H1 stays — GitHub readers see it; the website's sync
+  strips it automatically (the website's H1 comes from `title:` in
+  frontmatter).
+- Use GFM alerts (`> [!NOTE]`, `> [!WARNING]`, `> [!TIP]`) for callouts.
+  Legacy emoji-led blockquotes (`> ⚠️ **...**`) auto-convert during sync,
+  but new content should use the GFM form.
+- Update `lessons:` in frontmatter when you add or remove a `### N. <Title>`
+  numbered objective.
+- When promoting a draft module past placeholder content, remove
+  `status: draft` from frontmatter.
+
+---
+
 ## ADK 2.0 Cheatsheet Overrides
 
 The bundled cheatsheet at `.agents/skills/google-agents-cli-adk-code/references/adk-2.0.md` is mostly accurate, but has at least one syntax error caught during the Workflow API migration. If a future agent in this repo follows the cheatsheet's documented form and Pydantic rejects it, prefer the override below.

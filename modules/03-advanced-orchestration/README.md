@@ -1,3 +1,13 @@
+---
+order: 3
+num: '03'
+title: Advanced Orchestration
+description: |
+  Evolve the linear pipeline into dynamic parallel research with asyncio.gather, then defeat URL hallucination by grounding citations in real Vertex AI Search metadata.
+duration: 75 min
+lessons: 6
+---
+
 # Module 03: Advanced Orchestration (Parallelism & Grounding)
 
 In Module 02 we built a linear three-step pipeline. In this module we'll evolve it into a **parallel research workflow**: a single Planner generates N topics, the framework spawns N independent researchers concurrently via the new ADK 2.0 dynamic-workflow API, and a Compiler aggregates their structured drafts into a final `NewspaperPage`.

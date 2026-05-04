@@ -1,3 +1,14 @@
+---
+order: 6
+num: '06'
+title: Evaluation
+description: |
+  It rarely works perfectly the first time. Implement a Writer-Critic pattern, add guardrails, and use traces to debug hallucinations and tool-calling failures.
+duration: 60 min
+lessons: 0
+status: draft
+---
+
 # Module 06: Evaluation
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]

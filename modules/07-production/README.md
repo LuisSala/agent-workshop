@@ -1,3 +1,14 @@
+---
+order: 7
+num: '07'
+title: Production
+description: |
+  Wrap the agent in a lightweight web service, containerize it, deploy to Cloud Run, and set up monitoring and telemetry.
+duration: 60 min
+lessons: 0
+status: draft
+---
+
 # Module 07: Production
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]
