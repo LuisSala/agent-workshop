@@ -167,15 +167,43 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-title").innerText = article.title;
         document.getElementById("modal-sources").innerText = `✦ SYNTHESIZED FROM ${sourceCount} SOURCES IN REAL-TIME`;
         document.getElementById("modal-body").innerHTML = marked.parse(article.content);
-        
+
         const searchChipHtml = article.search_entry_point_html ? `<h3>Suggested Searches</h3><div class="search-entry-point" style="margin-bottom: 20px;">${article.search_entry_point_html}</div>` : "";
 
-        const citationsHtml = (article.citations && article.citations.length > 0) 
+        const citationsHtml = (article.citations && article.citations.length > 0)
             ? "<h3>Sources</h3><ul>" + article.citations.map(c => `<li><a href="${c.url}" target="_blank">${c.title}</a></li>`).join("") + "</ul>"
             : "";
         document.getElementById("modal-citations").innerHTML = searchChipHtml + citationsHtml;
-        
+
+        // Reset the feedback row each time a modal opens — re-enable the
+        // buttons and clear the status text so the user can rate every
+        // article they look at.
+        const status = document.getElementById("feedback-status");
+        status.textContent = "";
+        document.querySelectorAll("#modal-feedback .feedback-btn").forEach(btn => {
+            btn.disabled = false;
+            btn.onclick = () => submitFeedback(article, parseFloat(btn.dataset.score));
+        });
+
         modal.style.display = "block";
+    }
+
+    // Fire-and-forget POST to /feedback. The webapp's Pydantic Feedback
+    // model auto-generates user_id/session_id, so the payload only needs
+    // a score (and optional text). Demonstrates the embedded-Runner
+    // pattern's "structured user feedback into Cloud Logging" loop.
+    function submitFeedback(article, score) {
+        fetch("/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ score: score, text: article.title }),
+        }).then(res => {
+            const status = document.getElementById("feedback-status");
+            status.textContent = res.ok ? "Thanks for the feedback!" : "Failed to send";
+            document.querySelectorAll("#modal-feedback .feedback-btn").forEach(b => b.disabled = true);
+        }).catch(err => {
+            document.getElementById("feedback-status").textContent = "Error: " + err.message;
+        });
     }
 
     closeBtn.onclick = () => modal.style.display = "none";

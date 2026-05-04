@@ -5,7 +5,7 @@ title: Vector Search
 description: |
   Add a Vertex AI Vector Search archive lookup alongside the live-news pipeline, with conditional routing in the workflow and structured output the UI can render.
 duration: 75 min
-lessons: 5
+lessons: 4
 ---
 
 # Module 04: Vector Search & Structured UI Integration
@@ -232,6 +232,35 @@ flowchart LR
 ### When to use this pattern instead of ADK Web
 
 `make playground` is for the *developer* — interactive runs, drilling into events, no UI work. The embedded-`Runner` pattern is for *end users* of your agent — when you need a custom branded UI, custom routing or auth, or to integrate the agent into an existing application. The file at `webapp/app.py` is small and copy-able as a starting point for your own embedding.
+
+### Production observability: telemetry, structured logs, feedback
+
+The webapp wires three production-grade observability hooks on top of the bare Runner pattern. Each is small enough to grok in isolation but together they form the loop you'd actually want in front of users.
+
+**1. OpenTelemetry → Cloud Trace.** `webapp/app.py` calls `setup_telemetry()` at startup. This is the same helper that ships in `app/app_utils/telemetry.py`. It's a no-op when `LOGS_BUCKET_NAME` is unset (i.e. local dev) and ships LLM spans + GenAI prompt-response payloads to Cloud Trace + GCS in production. Once you set `LOGS_BUCKET_NAME=gs://your-bucket` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT` in your environment, every workflow run produces a distributed trace you can open in the Cloud Trace console — planner span → orchestrator span → N parallel researcher spans → compiler span, all chained by the workflow's session ID.
+
+**2. Structured run-completion logs.** After each workflow finishes, the webapp emits a structured log via `log_event(...)`:
+
+```python
+log_event({
+    "event": "workflow_completed",
+    "mode": mode,
+    "query": query,
+    "session_id": session_id,
+    "newsletter_id": filename,
+    "article_count": len(compiled_data["articles"]),
+})
+```
+
+`log_event` writes to Cloud Logging when `google.cloud.logging.Client()` initializes (i.e. when GCP credentials are present), and falls back to stdout for local dev. The fallback means students can hack on the webapp without touching `gcloud auth`; the prod path means an SRE can write a Logs Explorer query to see "every newsletter that hit the archive branch this week" without instrumenting anything else.
+
+**3. The `/feedback` endpoint.** The article modal has 👍 / 👎 buttons that POST to `/feedback`. The route validates the body against the Pydantic `Feedback` model (which lives in `app/app_utils/typing.py` — auto-generates `user_id` and `session_id`) and then `log_event(feedback.model_dump(), severity="INFO")`. Same observability path; different signal source. This is the seed of an eval-feedback loop — capture user thumbs-up/down → join with the run's `session_id` in Cloud Logging → use as ground truth in mod06's evaluation lessons.
+
+> [!TIP]
+> **Forward references for production lessons.** Two `webapp/app.py` knobs are intentionally left at their dev defaults:
+>
+> - `InMemorySessionService()` — sessions evaporate on restart. To persist them across requests in production, swap in a backend like `cloud_sql://...` or `agent_platform_sessions://...`. Mod05 covers Agent Engine sessions in detail.
+> - The Runner has no `artifact_service_uri` set. If your agent generates files (PDFs, images, downloads), point this at a GCS bucket and ADK will store + serve them. Out of scope today; mod07 will revisit when the deployment story lands.
 
 ## Alternative: agent-level routing
 
