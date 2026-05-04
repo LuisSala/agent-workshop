@@ -4,7 +4,7 @@ num: '01'
 title: Foundation
 description: |
   Build your first agent with Google's Agent Development Kit. Start from the Agent Starter Pack baseline and add a custom Python tool the model can call.
-duration: 30 min
+duration: 20 min
 lessons: 3
 ---
 

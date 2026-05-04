@@ -4,7 +4,7 @@ num: '02'
 title: Agent Orchestration
 description: |
   Build a multi-agent AI Newsroom as a graph-based pipeline. A Planner, a Researcher, and an Editor-in-Chief, wired together with the ADK 2.0 Workflow API.
-duration: 60 min
+duration: 30 min
 lessons: 5
 ---
 

@@ -15,7 +15,6 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "google-cloud-discoveryengine>=0.13.12",
     "google-cloud-vectorsearch>=0.7.0",
-    "marimo>=0.21.1",
     "google-genai>=1.69.0",
     "flask>=3.1.3",
 ]

@@ -4,7 +4,7 @@ num: '05'
 title: Agent Engine
 description: |
   Move the ADK agent from a local script to a managed lifecycle on Vertex AI Agent Engine — sessions, state, and traceable execution paths.
-duration: 60 min
+duration: 0 min
 lessons: 0
 status: draft
 ---

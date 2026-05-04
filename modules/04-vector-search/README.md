@@ -4,7 +4,7 @@ num: '04'
 title: Vector Search
 description: |
   Add a Vertex AI Vector Search archive lookup alongside the live-news pipeline, with conditional routing in the workflow and structured output the UI can render.
-duration: 75 min
+duration: 45 min
 lessons: 4
 ---
 

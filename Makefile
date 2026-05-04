@@ -89,14 +89,6 @@ run-webapp:
 	@echo "==============================================================================="
 	uv run --no-sync python webapp/app.py
 
-# Launch Marimo Slideshow
-run-slides:
-	@echo "==============================================================================="
-	@echo "| 📊 Starting the Workshop Slideshow...                                       |"
-	@echo "|                                                                             |"
-	@echo "| 🌐 Open your browser to http://localhost:2718                               |"
-	@echo "==============================================================================="
-	uv run marimo edit slides/workshop.py -p 2718 --headless --no-token
 
 # ==============================================================================
 # Ingestion & Harvester

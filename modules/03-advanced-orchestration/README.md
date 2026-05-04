@@ -4,7 +4,7 @@ num: '03'
 title: Advanced Orchestration
 description: |
   Evolve the linear pipeline into dynamic parallel research with asyncio.gather, then defeat URL hallucination by grounding citations in real Vertex AI Search metadata.
-duration: 75 min
+duration: 30 min
 lessons: 6
 ---
 
