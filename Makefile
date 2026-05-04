@@ -21,6 +21,7 @@ help:
 	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
 	@echo "  make harvest        - Run the Vector Search News Harvester daemon"
 	@echo "  make vector-cli     - Run the Vector Search diagnostic CLI (Usage: make vector-cli ARGS=\"...\")"
+	@echo "  make gcloud-reset   - Reset gcloud account, ADC login, and quota project"
 	@echo "==============================================================================="
 
 # ==============================================================================
@@ -31,6 +32,25 @@ help:
 install:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; source $HOME/.local/bin/env; }
 	uv sync
+
+# Reset gcloud auth: switch account, run interactive ADC login, and pin the
+# ADC quota project. Override defaults with:
+#   make gcloud-reset GCLOUD_ACCOUNT=other@example.com GCLOUD_QUOTA_PROJECT=other-proj
+GCLOUD_ACCOUNT ?= luis@luissala.altostrat.com
+GCLOUD_QUOTA_PROJECT ?= shared-services-388522
+
+gcloud-reset:
+	@echo "==============================================================================="
+	@echo "| 🔐 Resetting gcloud auth                                                    |"
+	@echo "|    account:        $(GCLOUD_ACCOUNT)"
+	@echo "|    quota project:  $(GCLOUD_QUOTA_PROJECT)"
+	@echo "==============================================================================="
+	gcloud config set account "$(GCLOUD_ACCOUNT)"
+	gcloud auth application-default login
+	gcloud auth application-default set-quota-project "$(GCLOUD_QUOTA_PROJECT)"
+	@echo
+	@echo "✅ Done. Active config:"
+	@gcloud config list
 
 # ==============================================================================
 # Playground Targets
