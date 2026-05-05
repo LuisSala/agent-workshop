@@ -36,26 +36,43 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.abs(hash);
     }
 
-    function triggerSearch(prefix, queryValue) {
+    function triggerSearch(mode, queryValue) {
         if (!queryValue) return;
 
         showScreen("terminal");
         termOutput.innerHTML = "";
+
+        // mode picks the workflow on the server (news vs archive). The agent
+        // receives the raw query — no prefix-string trickery needed since
+        // the workflow selection happens at the application layer.
+        const url = `/stream?mode=${encodeURIComponent(mode)}&query=${encodeURIComponent(queryValue)}`;
+        const evtSource = new EventSource(url);
         
-        const fullQuery = prefix + queryValue;
-        const evtSource = new EventSource(`/stream?query=${encodeURIComponent(fullQuery)}`);
-        
+        // The diagnostic event log shows the raw stream of agent emissions. Some
+        // emissions (e.g. the compiler's final NewspaperPage JSON) embed HTML
+        // for the Google Search Suggestion chip — if we used innerHTML the
+        // browser would attempt to render that HTML inline, which fails on the
+        // chip's escaped SVG attributes and produces 80+ console errors. The
+        // chip belongs in the article modal (rendered as innerHTML there for
+        // grounding-display compliance), not in the live event log. We display
+        // event content as plain text here.
+        const escapeHtml = (s) => String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+
         evtSource.onmessage = (e) => {
             const payload = JSON.parse(e.data);
-            
+
             if (payload.type === "event") {
                 const line = document.createElement("div");
                 line.className = "term-line";
                 let content = payload.text || payload.tool || "Working...";
-                line.innerHTML = `<span class="term-author">[${payload.author}]</span> ${content}`;
+                line.innerHTML = `<span class="term-author">[${escapeHtml(payload.author)}]</span> ${escapeHtml(content)}`;
                 termOutput.appendChild(line);
                 termOutput.scrollTop = termOutput.scrollHeight;
-            } 
+            }
             else if (payload.type === "finish") {
                 evtSource.close();
                 if (payload.data && payload.data.articles && payload.data.articles.length > 0) {
@@ -80,8 +97,8 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    liveSearchBtn.addEventListener("click", () => triggerSearch("Look up fresh news about: ", queryInput.value.trim()));
-    archiveSearchBtn.addEventListener("click", () => triggerSearch("Search the archive for past news on: ", queryInput.value.trim()));
+    liveSearchBtn.addEventListener("click", () => triggerSearch("news", queryInput.value.trim()));
+    archiveSearchBtn.addEventListener("click", () => triggerSearch("archive", queryInput.value.trim()));
 
     // Enter key submits (default to live search)
     queryInput.addEventListener("keydown", (e) => {
@@ -95,14 +112,14 @@ document.addEventListener("DOMContentLoaded", () => {
             queryInput.value = "";
             showScreen("input");
         } else {
-            triggerSearch("Look up fresh news about: ", q);
+            triggerSearch("news", q);
         }
     });
 
     navArchiveSearchBtn.addEventListener("click", () => {
         let q = navQueryInput.value.trim();
         if (q) {
-            triggerSearch("Search the archive for past news on: ", q);
+            triggerSearch("archive", q);
         }
     });
 
@@ -150,15 +167,43 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-title").innerText = article.title;
         document.getElementById("modal-sources").innerText = `✦ SYNTHESIZED FROM ${sourceCount} SOURCES IN REAL-TIME`;
         document.getElementById("modal-body").innerHTML = marked.parse(article.content);
-        
+
         const searchChipHtml = article.search_entry_point_html ? `<h3>Suggested Searches</h3><div class="search-entry-point" style="margin-bottom: 20px;">${article.search_entry_point_html}</div>` : "";
 
-        const citationsHtml = (article.citations && article.citations.length > 0) 
+        const citationsHtml = (article.citations && article.citations.length > 0)
             ? "<h3>Sources</h3><ul>" + article.citations.map(c => `<li><a href="${c.url}" target="_blank">${c.title}</a></li>`).join("") + "</ul>"
             : "";
         document.getElementById("modal-citations").innerHTML = searchChipHtml + citationsHtml;
-        
+
+        // Reset the feedback row each time a modal opens — re-enable the
+        // buttons and clear the status text so the user can rate every
+        // article they look at.
+        const status = document.getElementById("feedback-status");
+        status.textContent = "";
+        document.querySelectorAll("#modal-feedback .feedback-btn").forEach(btn => {
+            btn.disabled = false;
+            btn.onclick = () => submitFeedback(article, parseFloat(btn.dataset.score));
+        });
+
         modal.style.display = "block";
+    }
+
+    // Fire-and-forget POST to /feedback. The webapp's Pydantic Feedback
+    // model auto-generates user_id/session_id, so the payload only needs
+    // a score (and optional text). Demonstrates the embedded-Runner
+    // pattern's "structured user feedback into Cloud Logging" loop.
+    function submitFeedback(article, score) {
+        fetch("/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ score: score, text: article.title }),
+        }).then(res => {
+            const status = document.getElementById("feedback-status");
+            status.textContent = res.ok ? "Thanks for the feedback!" : "Failed to send";
+            document.querySelectorAll("#modal-feedback .feedback-btn").forEach(b => b.disabled = true);
+        }).catch(err => {
+            document.getElementById("feedback-status").textContent = "Error: " + err.message;
+        });
     }
 
     closeBtn.onclick = () => modal.style.display = "none";
@@ -180,8 +225,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 data.forEach(item => {
                     const li = document.createElement("li");
                     const dateStr = new Date(item.timestamp * 1000).toLocaleString();
-                    const cleanQuery = item.query.replace('Look up fresh news about: ', '').replace('Search the archive for past news on: ', '');
-                    li.innerHTML = `<a href="#" data-id="${item.id}" style="color: #60a5fa; text-decoration: none; font-size: 0.95rem;">${cleanQuery}</a>
+                    // Older entries may include the legacy prefix — strip it for display.
+                    const cleanQuery = item.query
+                        .replace('Look up fresh news about: ', '')
+                        .replace('Search the archive for past news on: ', '');
+                    const modeIcon = item.mode === "archive" ? "📚" : "📰";
+                    li.innerHTML = `<a href="#" data-id="${item.id}" style="color: #60a5fa; text-decoration: none; font-size: 0.95rem;">${modeIcon} ${cleanQuery}</a>
                                     <span style="color:#666; font-size: 0.8rem; margin-left:10px;">${dateStr}</span>`;
                     
                     li.querySelector("a").addEventListener("click", (e) => {

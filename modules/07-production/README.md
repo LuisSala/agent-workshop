@@ -1,3 +1,14 @@
+---
+order: 7
+num: '07'
+title: Production
+description: |
+  Wrap the agent in a lightweight web service, containerize it, deploy to Cloud Run, and set up monitoring and telemetry.
+duration: 0 min
+lessons: 0
+status: draft
+---
+
 # Module 07: Production
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]
@@ -6,7 +17,7 @@
 
 ### 1. [First Objective Title]
 
-[Instructions, context, or commands needed to achieve this objective. e.g., `make playground` or checking out a specific file.]
+[Instructions, context, or commands needed to achieve this objective. e.g., `make adk-web` or checking out a specific file.]
 
 ### 2. [Second Objective Title]
 

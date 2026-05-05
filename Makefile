@@ -9,8 +9,8 @@ help:
 	@echo "==============================================================================="
 	@echo "| Agent Workshop Development Commands                                         |"
 	@echo "==============================================================================="
-	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
-	@echo "  make run-webapp     - Launch the AI Newsroom Web UI directly"
+	@echo "  make adk-web        - Launch local dev playground (Web UI & CLI)"
+	@echo "  make run-webapp     - Launch the AI Newsroom Web UI (Module 04 demo)"
 	@echo "  make run-slides     - Launch the interactive Marimo Workshop Slideshow"
 	@echo "  make test           - Run unit and integration tests"
 	@echo "  make eval           - Run agent evaluation using ADK evalsets"
@@ -21,6 +21,7 @@ help:
 	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
 	@echo "  make harvest        - Run the Vector Search News Harvester daemon"
 	@echo "  make vector-cli     - Run the Vector Search diagnostic CLI (Usage: make vector-cli ARGS=\"...\")"
+	@echo "  make gcloud-reset   - Reset gcloud account, ADC login, and quota project"
 	@echo "==============================================================================="
 
 # ==============================================================================
@@ -32,12 +33,31 @@ install:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; source $HOME/.local/bin/env; }
 	uv sync
 
+# Reset gcloud auth: switch account, run interactive ADC login, and pin the
+# ADC quota project. Override defaults with:
+#   make gcloud-reset GCLOUD_ACCOUNT=other@example.com GCLOUD_QUOTA_PROJECT=other-proj
+GCLOUD_ACCOUNT ?= luis@luissala.altostrat.com
+GCLOUD_QUOTA_PROJECT ?= shared-services-388522
+
+gcloud-reset:
+	@echo "==============================================================================="
+	@echo "| 🔐 Resetting gcloud auth                                                    |"
+	@echo "|    account:        $(GCLOUD_ACCOUNT)"
+	@echo "|    quota project:  $(GCLOUD_QUOTA_PROJECT)"
+	@echo "==============================================================================="
+	gcloud config set account "$(GCLOUD_ACCOUNT)"
+	gcloud auth application-default login
+	gcloud auth application-default set-quota-project "$(GCLOUD_QUOTA_PROJECT)"
+	@echo
+	@echo "✅ Done. Active config:"
+	@gcloud config list
+
 # ==============================================================================
 # Playground Targets
 # ==============================================================================
 
 # Launch local dev playground
-playground:
+adk-web:
 	@echo "==============================================================================="
 	@echo "| 🚀 Starting your agent playground...                                        |"
 	@echo "|                                                                             |"
@@ -45,10 +65,23 @@ playground:
 	@echo "|                                                                             |"
 	@echo "| 🔍 IMPORTANT: Select the 'app' folder to interact with your agent.          |"
 	@echo "==============================================================================="
-	uv run adk web workspace --port 8501 --reload_agents
+	uv run adk web workspace --host 0.0.0.0 --port 8500 --reload_agents
 
-# Launch Flask Newsroom UI
+# Launch Flask Newsroom UI (mod04 demo — embeds an ADK Runner into Flask)
 run-webapp:
+	@if ! grep -q "from utils.vector_store" workspace/app/agent.py 2>/dev/null; then \
+		echo "==============================================================================="; \
+		echo "| ⚠️  WARNING: workspace/app/agent.py doesn't import utils.vector_store.       |"; \
+		echo "|                                                                             |"; \
+		echo "| The AI Newsroom web app is the Module 04 demo — it expects an agent that   |"; \
+		echo "| produces a structured NewspaperPage so the front-end can render the grid.  |"; \
+		echo "| Earlier modules (01-03) won't render correctly here; use 'make adk-web'    |"; \
+		echo "| (ADK Web) for those instead.                                                |"; \
+		echo "|                                                                             |"; \
+		echo "| To load the Module 04 solution:  make solve module=04                       |"; \
+		echo "==============================================================================="; \
+		echo; \
+	fi
 	@echo "==============================================================================="
 	@echo "| 📰 Starting your AI Newsroom Web UI...                                      |"
 	@echo "|                                                                             |"
@@ -56,14 +89,6 @@ run-webapp:
 	@echo "==============================================================================="
 	uv run --no-sync python webapp/app.py
 
-# Launch Marimo Slideshow
-run-slides:
-	@echo "==============================================================================="
-	@echo "| 📊 Starting the Workshop Slideshow...                                       |"
-	@echo "|                                                                             |"
-	@echo "| 🌐 Open your browser to http://localhost:2718                               |"
-	@echo "==============================================================================="
-	uv run marimo edit slides/workshop.py -p 2718 --headless --no-token
 
 # ==============================================================================
 # Ingestion & Harvester

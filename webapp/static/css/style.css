@@ -91,6 +91,13 @@ body { background-color: var(--bg-color); color: var(--text-primary); font-famil
 #modal-citations a { color: var(--accent); text-decoration: none; word-break: break-all; }
 #modal-citations a:hover { text-decoration: underline; }
 
+#modal-feedback { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+#modal-feedback .feedback-label { color: var(--text-secondary); font-size: 0.95rem; }
+#modal-feedback .feedback-btn { background: #222; color: #fff; border: 1px solid #333; border-radius: 999px; width: 40px; height: 40px; font-size: 1.2rem; cursor: pointer; transition: background 0.15s, transform 0.15s; padding: 0; line-height: 1; }
+#modal-feedback .feedback-btn:hover:not(:disabled) { background: #333; transform: scale(1.05); }
+#modal-feedback .feedback-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+#modal-feedback .feedback-status { color: #4ade80; font-size: 0.9rem; }
+
 .teaser-text { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.2rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .teaser-text p { margin: 0; }
 .article-card h2 { font-family: var(--font-serif); font-size: 1.4rem; margin-bottom: 0.8rem; line-height: 1.3; }

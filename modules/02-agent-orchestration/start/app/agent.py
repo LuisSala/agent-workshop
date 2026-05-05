@@ -13,7 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# MODULE 02-AGENT-ORCHESTRATION: START
+# MODULE 02 — Agent Orchestration: START
+#
+# In this module you'll evolve the single-agent design below (your mod01
+# solution — basic agent with weather/time tools) into a graph-based
+# pipeline using ADK 2.0's new Workflow API.
+#
+# Your destination:
+#       START --> planner_agent --> research_agent --> compiler_agent
+#                  (LlmAgent          (LlmAgent          (LlmAgent
+#                   output_schema      tools=[            text output)
+#                    SearchPlan)       google_search])
+#
+# What you'll build (follow modules/02-agent-orchestration/README.md):
+#   - 3 LlmAgent nodes (planner_agent, research_agent, compiler_agent)
+#   - 1 Workflow root_agent with three linear edges
+#   - The existing single-agent root_agent with weather/time tools below
+#     is retired — feel free to delete or comment it out as you build
+#     the new pipeline.
+#
+# Key references:
+#   * Workflow overview ............ https://adk.dev/workflows/
+#   * LlmAgent + tools + schema .... https://adk.dev/2.0/
+#   * Data flow between nodes ...... https://adk.dev/workflows/data-handling/
 
 import datetime
 from zoneinfo import ZoneInfo

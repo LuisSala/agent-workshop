@@ -1,3 +1,14 @@
+---
+order: 5
+num: '05'
+title: Agent Engine
+description: |
+  Move the ADK agent from a local script to a managed lifecycle on Vertex AI Agent Engine — sessions, state, and traceable execution paths.
+duration: 0 min
+lessons: 0
+status: draft
+---
+
 # Module 05: Agent Engine
 
 In this module, we move from running our agent locally to deploying it as a managed service on **Vertex AI Agent Engine**. Agent Engine is a fully managed Google Cloud service purpose-built for hosting ADK agents — no Dockerfiles, no infrastructure management. You upload your source code, and Google handles scaling, serving, and lifecycle management.

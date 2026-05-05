@@ -204,3 +204,9 @@ tools/a2a-inspector/
 
 # ADK Temp Files
 .adk/
+
+# playwright-cli session/snapshot scratch dir
+.playwright-cli/
+
+# Claude Code runtime artifacts (skills/ is tracked intentionally)
+.claude/scheduled_tasks.lock
