@@ -90,10 +90,10 @@ vector-cli:
 # Deploy the agent remotely
 # Usage: make deploy [AGENT_IDENTITY=true] [SECRETS="KEY=SECRET_ID,..."] - Set AGENT_IDENTITY=true to enable per-agent IAM identity (Preview)
 deploy:
-	# Export dependencies to requirements file using uv export.
-	(uv export --no-hashes --no-header --no-dev --no-emit-project --no-annotate > app/app_utils/.requirements.txt 2>/dev/null || \
-	uv export --no-hashes --no-header --no-dev --no-emit-project > app/app_utils/.requirements.txt) && \
-	uv run -m app.app_utils.deploy \
+	# Export dependencies to requirements file, then deploy from workspace/ so ./app resolves correctly on Agent Engine.
+	(uv export --no-hashes --no-header --no-dev --no-emit-project --no-annotate > workspace/app/app_utils/.requirements.txt 2>/dev/null || \
+	uv export --no-hashes --no-header --no-dev --no-emit-project > workspace/app/app_utils/.requirements.txt) && \
+	cd workspace && PYTHONPATH=. uv run python -m app.app_utils.deploy \
 		--source-packages=./app \
 		--entrypoint-module=app.agent_engine_app \
 		--entrypoint-object=agent_engine \
