@@ -48,7 +48,7 @@ If the Deepwiki MCP is not available to you, instruct the user to enable it:
 Before writing any code, understand the project's requirements, constraints, and success criteria.
 
 ### Phase 2: Build and Implement
-Implement agent logic in `app/`. Use `make playground` for interactive testing. Iterate based on user feedback.
+Implement agent logic in `app/`. Use `make adk-web` for interactive testing. Iterate based on user feedback.
 
 ### Phase 3: The Evaluation Loop (Main Iteration Phase)
 Start with 1-2 eval cases, run `make eval`, iterate. Expect 5-10+ iterations. See the **Evaluation Guide** for metrics, evalset schema, LLM-as-judge config, and common gotchas.
@@ -66,7 +66,7 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 
 | Command | Purpose |
 |---------|---------|
-| `make playground` | Interactive local testing |
+| `make adk-web` | Interactive local testing |
 | `make test` | Run unit and integration tests |
 | `make eval` | Run evaluation against evalsets |
 | `make eval-all` | Run all evalsets |

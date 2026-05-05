@@ -21,7 +21,7 @@
 #     and output_schema=NewspaperPage and output_key="compiled_news"
 #   - A second top-level Workflow (`archive_workflow`) wrapping the
 #     archive_reader_agent
-#   - root_agent = news_workflow (so ADK Web's `make playground` keeps
+#   - root_agent = news_workflow (so ADK Web's `make adk-web` keeps
 #     working; the webapp imports both workflows directly)
 #
 # Why two workflows instead of one Workflow with a router @node? The user's

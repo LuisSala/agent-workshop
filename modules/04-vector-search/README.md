@@ -160,14 +160,14 @@ archive_workflow = Workflow(
     ],
 )
 
-# ADK Web (`make playground`) only exposes one root_agent. Alias to news_workflow
+# ADK Web (`make adk-web`) only exposes one root_agent. Alias to news_workflow
 # for development convenience; the webapp picks workflows explicitly per request.
 root_agent = news_workflow
 
 app = App(root_agent=root_agent, name="app")
 ```
 
-> ℹ️ **ADK Web only sees `root_agent`.** During development, `make playground` will run the news flow because `root_agent = news_workflow`. To inspect the archive flow interactively, use the AI Newsroom web app (`make run-webapp`) — or write a small CLI script that imports `archive_workflow` directly and calls `Runner` against it.
+> ℹ️ **ADK Web only sees `root_agent`.** During development, `make adk-web` will run the news flow because `root_agent = news_workflow`. To inspect the archive flow interactively, use the AI Newsroom web app (`make run-webapp`) — or write a small CLI script that imports `archive_workflow` directly and calls `Runner` against it.
 
 ## Google Search Grounding compliance
 
@@ -180,7 +180,7 @@ If you ever modify the rendering path (e.g. switch the webapp from innerHTML to 
 
 ## Try it
 
-This is the workshop's first encounter with the **AI Newsroom web app** — a Flask + Server-Sent-Events front-end that embeds an ADK `Runner` directly. In modules 1-3 you used `make playground` (ADK Web) to inspect agents during development; mod04 introduces the alternate path of shipping your agent inside your own UI.
+This is the workshop's first encounter with the **AI Newsroom web app** — a Flask + Server-Sent-Events front-end that embeds an ADK `Runner` directly. In modules 1-3 you used `make adk-web` (ADK Web) to inspect agents during development; mod04 introduces the alternate path of shipping your agent inside your own UI.
 
 ```bash
 make run-webapp     # http://127.0.0.1:8510 — Flask UI with both buttons
@@ -191,7 +191,7 @@ The dashboard has two buttons. **Live Search** sends `?mode=news` and runs the n
 You can still drive each workflow from ADK Web or the CLI for development:
 
 ```bash
-make playground                  # ADK Web on :8501 — runs news_workflow (the root_agent alias)
+make adk-web                  # ADK Web on :8501 — runs news_workflow (the root_agent alias)
 uv run adk run workspace/app     # CLI runner — also news_workflow
 ```
 
@@ -231,7 +231,7 @@ flowchart LR
 
 ### When to use this pattern instead of ADK Web
 
-`make playground` is for the *developer* — interactive runs, drilling into events, no UI work. The embedded-`Runner` pattern is for *end users* of your agent — when you need a custom branded UI, custom routing or auth, or to integrate the agent into an existing application. The file at `webapp/app.py` is small and copy-able as a starting point for your own embedding.
+`make adk-web` is for the *developer* — interactive runs, drilling into events, no UI work. The embedded-`Runner` pattern is for *end users* of your agent — when you need a custom branded UI, custom routing or auth, or to integrate the agent into an existing application. The file at `webapp/app.py` is small and copy-able as a starting point for your own embedding.
 
 ### Production observability: telemetry, structured logs, feedback
 

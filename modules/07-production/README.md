@@ -17,7 +17,7 @@ status: draft
 
 ### 1. [First Objective Title]
 
-[Instructions, context, or commands needed to achieve this objective. e.g., `make playground` or checking out a specific file.]
+[Instructions, context, or commands needed to achieve this objective. e.g., `make adk-web` or checking out a specific file.]
 
 ### 2. [Second Objective Title]
 

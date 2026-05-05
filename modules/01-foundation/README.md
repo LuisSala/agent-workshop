@@ -17,7 +17,7 @@ In this module, we will explore the fundamentals of the Google Agent Development
 The baseline `agent.py` contains a straightforward root agent configuration. 
 
 ### 1. Run the ADK Web UI
-Execute `make playground` (or `adk web path/to/agent`) from your terminal. Try talking to your agent and see what it can do before you begin making modifications!
+Execute `make adk-web` (or `adk web path/to/agent`) from your terminal. Try talking to your agent and see what it can do before you begin making modifications!
 
 ### 2. Add a Custom Function: `get_weather()`
 Your objective is to add a function tool that returns the current weather conditions for a given city. The tool should return a random temperature (e.g. -10 to 40 degrees Celsius) and weather conditions (sunny, cloudy, raining, etc.).

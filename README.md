@@ -43,7 +43,7 @@ Before you begin, ensure you have:
 Install required packages and launch the local development environment:
 
 ```bash
-make install && make playground
+make install && make adk-web
 ```
 
 ## Commands
@@ -51,7 +51,7 @@ make install && make playground
 | Command              | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `make install`       | Install dependencies using uv                                                               |
-| `make playground`    | Launch local development environment                                                        |
+| `make adk-web`    | Launch local development environment                                                        |
 | `make lint`          | Run code quality checks                                                                     |
 | `make test`          | Run unit and integration tests                                                              |
 | `make deploy`        | Deploy agent to Agent Engine                                                                |
@@ -72,7 +72,7 @@ For full command options and usage, refer to the [Makefile](Makefile).
 
 ## Development
 
-Edit your agent logic in `app/agent.py` and test with `make playground` - it auto-reloads on save.
+Edit your agent logic in `app/agent.py` and test with `make adk-web` - it auto-reloads on save.
 See the [development guide](https://googlecloudplatform.github.io/agent-starter-pack/guide/development-guide) for the full workflow.
 
 ## Deployment

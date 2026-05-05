@@ -9,7 +9,7 @@ help:
 	@echo "==============================================================================="
 	@echo "| Agent Workshop Development Commands                                         |"
 	@echo "==============================================================================="
-	@echo "  make playground     - Launch local dev playground (Web UI & CLI)"
+	@echo "  make adk-web        - Launch local dev playground (Web UI & CLI)"
 	@echo "  make run-webapp     - Launch the AI Newsroom Web UI (Module 04 demo)"
 	@echo "  make run-slides     - Launch the interactive Marimo Workshop Slideshow"
 	@echo "  make test           - Run unit and integration tests"
@@ -57,7 +57,7 @@ gcloud-reset:
 # ==============================================================================
 
 # Launch local dev playground
-playground:
+adk-web:
 	@echo "==============================================================================="
 	@echo "| 🚀 Starting your agent playground...                                        |"
 	@echo "|                                                                             |"
@@ -65,7 +65,7 @@ playground:
 	@echo "|                                                                             |"
 	@echo "| 🔍 IMPORTANT: Select the 'app' folder to interact with your agent.          |"
 	@echo "==============================================================================="
-	uv run adk web workspace --host 0.0.0.0 --port 8501 --reload_agents
+	uv run adk web workspace --host 0.0.0.0 --port 8500 --reload_agents
 
 # Launch Flask Newsroom UI (mod04 demo — embeds an ADK Runner into Flask)
 run-webapp:
@@ -75,7 +75,7 @@ run-webapp:
 		echo "|                                                                             |"; \
 		echo "| The AI Newsroom web app is the Module 04 demo — it expects an agent that   |"; \
 		echo "| produces a structured NewspaperPage so the front-end can render the grid.  |"; \
-		echo "| Earlier modules (01-03) won't render correctly here; use 'make playground' |"; \
+		echo "| Earlier modules (01-03) won't render correctly here; use 'make adk-web'    |"; \
 		echo "| (ADK Web) for those instead.                                                |"; \
 		echo "|                                                                             |"; \
 		echo "| To load the Module 04 solution:  make solve module=04                       |"; \

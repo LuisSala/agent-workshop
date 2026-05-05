@@ -278,7 +278,7 @@ archive_reader_agent = LlmAgent(
 # ----------------------------------------------------------------------------
 # Two independent graphs. webapp/app.py imports both and picks one per
 # request based on the UI button the user clicked (the `?mode=` query
-# param). ADK Web (`make playground`) only sees `root_agent`, so we alias
+# param). ADK Web (`make adk-web`) only sees `root_agent`, so we alias
 # it to news_workflow for development convenience — to test the archive
 # flow during development, drive it via the AI Newsroom web app or write
 # a small script that imports `archive_workflow` directly.

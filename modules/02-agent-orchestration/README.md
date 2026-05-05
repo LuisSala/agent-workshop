@@ -141,7 +141,7 @@ app = App(root_agent=root_agent, name="app")
 ## Try it
 
 ```bash
-make playground       # ADK Web on :8501 — pick the `app` folder when prompted
+make adk-web       # ADK Web on :8501 — pick the `app` folder when prompted
 ```
 
 ADK Web's run pane shows the planner's `SearchPlan`, the researcher's tool calls, and the compiler's final newspaper text. Exercise the pipeline with prompts like *"Latest news on AI agents from the past three days."*
