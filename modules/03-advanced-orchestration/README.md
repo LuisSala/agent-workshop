@@ -21,7 +21,7 @@ Along the way you'll learn the most important pattern in production agentic AI: 
 ```mermaid
 flowchart LR
     START([START]) --> P[planner_agent<br/>LlmAgent · output_schema=TopicPlan]
-    P --> RO[research_orchestrator<br/>@node · rerun_on_resume=True]
+    P --> RO["research_orchestrator<br/>@node · rerun_on_resume=True"]
     RO -->|asyncio.gather| R0[researcher 0<br/>LlmAgent · google_search]
     RO -->|asyncio.gather| R1[researcher 1<br/>LlmAgent · google_search]
     RO -->|asyncio.gather| RN[researcher …]

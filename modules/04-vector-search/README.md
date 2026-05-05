@@ -26,13 +26,13 @@ In this module you will turn the Module 03 newsroom into a multi-purpose newsroo
 flowchart LR
     subgraph news["news_workflow"]
         S1([START]) --> P[planner_agent<br/>LlmAgent · TopicPlan]
-        P --> RO[research_orchestrator<br/>@node · asyncio.gather]
+        P --> RO["research_orchestrator<br/>@node · asyncio.gather"]
         RO -->|N parallel| C[compiler_agent<br/>LlmAgent · NewspaperPage]
     end
     subgraph archive["archive_workflow"]
         S2([START]) --> A[archive_reader_agent<br/>LlmAgent · search_news_archive<br/>NewspaperPage]
     end
-    Webapp[webapp/app.py<br/>?mode=news|archive] -.->|picks one| news
+    Webapp["webapp/app.py<br/>?mode=news|archive"] -.->|picks one| news
     Webapp -.->|picks one| archive
 ```
 
