@@ -16,6 +16,7 @@ help:
 	@echo "  make eval           - Run agent evaluation using ADK evalsets"
 	@echo "  make lint           - Run code quality checks"
 	@echo "  make deploy         - Deploy the agent remotely"
+	@echo "  make deploy-webapp  - Deploy the AI Newsroom webapp to Cloud Run"
 	@echo "  make catchup        - Start over at the beginning of a specific module"
 	@echo "  make solve          - Applies the solution of a module directly into the workspace"
 	@echo "  make snapshot       - Save the current workspace to a module's solution directory"
@@ -123,11 +124,34 @@ deploy:
 		--entrypoint-module=app.agent_engine_app \
 		--entrypoint-object=agent_engine \
 		--requirements-file=app/app_utils/.requirements.txt \
+		--display-name="workshop-agent-$$(hostname -s)" \
 		$(if $(AGENT_IDENTITY),--agent-identity) \
 		$(if $(filter command line,$(origin SECRETS)),--set-secrets="$(SECRETS)")
 
 # Alias for 'make deploy' for backward compatibility
 backend: deploy
+
+# Deploy the AI Newsroom webapp to Cloud Run (connects to deployed Agent Engine)
+# Requires: a successful `make deploy` first (needs deployment_metadata.json)
+deploy-webapp:
+	@if [ ! -f deployment_metadata.json ] && [ ! -f workspace/deployment_metadata.json ]; then \
+		echo "❌ No deployment_metadata.json found. Run 'make deploy' first to deploy the agent."; \
+		exit 1; \
+	fi
+	$(eval METADATA_FILE := $(shell [ -f workspace/deployment_metadata.json ] && echo workspace/deployment_metadata.json || echo deployment_metadata.json))
+	$(eval ENGINE_ID := $(shell python3 -c "import json; print(json.load(open('$(METADATA_FILE)'))['remote_agent_engine_id'])"))
+	@echo "==============================================================================="
+	@echo "| 🚀 Deploying AI Newsroom to Cloud Run...                                     |"
+	@echo "|                                                                             |"
+	@echo "| Agent Engine: $(ENGINE_ID)"
+	@echo "==============================================================================="
+	gcloud run deploy newsroom-$$(hostname -s) \
+		--source=webapp \
+		--region=us-central1 \
+		--allow-unauthenticated \
+		--set-env-vars="AGENT_ENGINE_ID=$(ENGINE_ID)" \
+		--memory=1Gi \
+		--timeout=300
 
 # ==============================================================================
 # Testing & Code Quality

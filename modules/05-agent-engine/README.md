@@ -153,6 +153,47 @@ make deploy AGENT_IDENTITY=true
 make register-gemini-enterprise
 ```
 
+### 6. Deploy the Web App to Cloud Run
+
+Now that your agent is running on Agent Engine, deploy the **AI Newsroom webapp** to Cloud Run so it can be accessed from anywhere. The Cloud Run webapp connects to your deployed Agent Engine remotely — it doesn't bundle the agent code.
+
+**Enable the Cloud Run API:**
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com --project=<YOUR_PROJECT_ID>
+```
+
+**How it works:**
+
+The webapp uses a separate entrypoint (`webapp/app_remote.py`) designed for Cloud Run:
+- Instead of importing `root_agent` directly, it calls your deployed Agent Engine via `agent_engine.async_stream_query()`
+- The `AGENT_ENGINE_ID` environment variable (injected at deploy time) tells it which Agent Engine to connect to
+- A `Dockerfile` packages the webapp with only the dependencies it needs (Flask, Vertex AI SDK, gunicorn)
+
+**Deploy with a single command:**
+```bash
+make deploy-webapp
+```
+
+**What happens under the hood:**
+1. The Makefile reads `deployment_metadata.json` to get your Agent Engine resource ID
+2. `gcloud run deploy --source=webapp` sends the `webapp/` directory to **Cloud Build**, which builds the container from the `Dockerfile`
+3. Cloud Run deploys the container and injects `AGENT_ENGINE_ID` as an environment variable
+4. The service name is `newsroom-<your-hostname>` for uniqueness
+
+⏱️ **This takes 2–3 minutes.** When complete, you'll see:
+```
+Service URL: https://newsroom-<hostname>-XXXXX.us-central1.run.app
+```
+
+Open that URL in your browser — you'll see the same AI Newsroom UI, now running on Cloud Run and querying your Agent Engine deployment.
+
+> **Note:** The Cloud Run service account needs permission to call Agent Engine. If you get auth errors, grant the `Vertex AI User` role:
+> ```bash
+> gcloud projects add-iam-policy-binding <YOUR_PROJECT_ID> \
+>     --member="serviceAccount:$(gcloud run services describe newsroom-$(hostname -s) --region=us-central1 --format='value(spec.template.spec.serviceAccountName)')" \
+>     --role="roles/aiplatform.user"
+> ```
+
 ---
 
 ## 🆘 Getting Stuck?
