@@ -13,11 +13,11 @@ Scaffolded projects pin `google-adk<2.0.0` — this must be updated before ADK 2
 
 ```toml
 # Under [project] > dependencies, remove the <2.0.0 upper bound:
-"google-adk>=2.0.0a1",          # was: "google-adk>=1.15.0,<2.0.0"
+"google-adk>=2.0.0",          # was: "google-adk>=1.15.0,<2.0.0"
 
 # If you have eval extras, update those too:
 # [project.optional-dependencies]
-# eval = ["google-adk[eval]>=2.0.0a1"]   # was: "google-adk[eval]>=1.15.0,<2.0.0"
+# eval = ["google-adk[eval]>=2.0.0"]   # was: "google-adk[eval]>=1.15.0,<2.0.0"
 ```
 
 **Step 2 — Reinstall dependencies:**

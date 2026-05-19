@@ -6,7 +6,7 @@ authors = [
     {name = "Your Name", email = "your@email.com"},
 ]
 dependencies = [
-    "google-adk>=2.0.0a1",
+    "google-adk>=2.0.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
@@ -34,7 +34,7 @@ jupyter = [
     "jupyter>=1.0.0,<2.0.0",
 ]
 eval = [
-    "google-adk[eval]>=2.0.0a1",
+    "google-adk[eval]>=2.0.0",
 ]
 lint = [
     "ruff>=0.4.6,<1.0.0",
