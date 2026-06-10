@@ -14,7 +14,7 @@ In Module 02 we built a linear three-step pipeline. In this module we'll evolve 
 
 Along the way you'll learn the most important pattern in production agentic AI: **defeating URL hallucination by grounding citations in real Vertex AI Search metadata.**
 
-> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** ADK 2.0 is in **Beta**. APIs may shift before GA — see the [ADK 2.0 overview](https://adk.dev/2.0/) for stability caveats.
+> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** It targets the official **ADK 2.0** release (`google-adk>=2.0.0`). See the [ADK 2.0 overview](https://adk.dev/2.0/) for the full graph API.
 
 ## Architecture
 
@@ -215,7 +215,7 @@ If you ever change the rendering path (e.g. switch the webapp from `innerHTML` t
 ## Try it
 
 ```bash
-make adk-web       # ADK Web on :8501 — pick the `app` folder when prompted
+make adk-web       # ADK Web on :8500 — pick the `app` folder when prompted
 ```
 
 ADK Web's event view is the right tool for inspecting parallel pipelines like this one — you can watch the planner's TopicPlan land, then see N concurrent researcher invocations stream in interleaved, then the compiler's final NewspaperPage. (The custom AI Newsroom web app — `make run-webapp` — comes in mod04, which embeds an ADK `Runner` into a Flask front-end as a teaching example.)
@@ -228,7 +228,7 @@ uv run adk run workspace/app
 
 ## References & Further Reading
 
-- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (Beta status; install).
+- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (install; the graph API mental model).
 - **Workflow API** — [adk.dev/workflows](https://adk.dev/workflows/) (nodes, edges, START — the mental model).
 - **Dynamic parallelism** — [adk.dev/workflows/dynamic](https://adk.dev/workflows/dynamic/) (`ctx.run_node` + `asyncio.gather` patterns).
 - **Data flow between nodes** — [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) (how `node_input` is populated; structured output passing).

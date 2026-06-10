@@ -18,7 +18,7 @@ In this module you will turn the Module 03 newsroom into a multi-purpose newsroo
 - Embed both workflows behind an ADK `Runner` in a custom Flask UI; the UI picks which workflow to invoke per request.
 - Honor Google Search Grounding's display requirements end-to-end.
 
-> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** ADK 2.0 is in **Beta**. APIs may shift before GA — see the [ADK 2.0 overview](https://adk.dev/2.0/) for stability caveats.
+> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** It targets the official **ADK 2.0** release (`google-adk>=2.0.0`). See the [ADK 2.0 overview](https://adk.dev/2.0/) for the full graph API.
 
 ## Architecture
 
@@ -191,7 +191,7 @@ The dashboard has two buttons. **Live Search** sends `?mode=news` and runs the n
 You can still drive each workflow from ADK Web or the CLI for development:
 
 ```bash
-make adk-web                  # ADK Web on :8501 — runs news_workflow (the root_agent alias)
+make adk-web                  # ADK Web on :8500 — runs news_workflow (the root_agent alias)
 uv run adk run workspace/app     # CLI runner — also news_workflow
 ```
 
@@ -299,9 +299,77 @@ root_agent = Workflow(
 
 For the AI Newsroom web app, the two-workflow approach is a better fit because the UI button click is unambiguous. For a chat-style agent where intent has to be inferred from free-form text, agent-level routing makes more sense.
 
+## Bonus: a conversational front door (calling a Workflow from a chat agent)
+
+A natural question once you have a pipeline: *"Can I put a chatbot in front of it — a conversational `LlmAgent` that chats normally but kicks off the news pipeline when the user asks for news?"*
+
+The tempting-but-wrong answers:
+
+```python
+# ❌ Does NOT work — both raise at runtime.
+chat = LlmAgent(name="chat", sub_agents=[news_workflow])   # sub_agents is for LlmAgent delegation peers
+chat = LlmAgent(name="chat", tools=[AgentTool(news_workflow)])  # AgentTool requires a BaseAgent
+```
+
+Here's the why, and it's worth internalizing: **a `Workflow` is not an `Agent`.** Its class hierarchy is `Workflow → BaseNode → pydantic.BaseModel` — it never inherits from `BaseAgent`. So `sub_agents=[…]` (which expects mode-tagged `LlmAgent` delegation peers) and `AgentTool(...)` (whose constructor is typed `agent: BaseAgent`) both reject it. (This is the same root cause as the [GEMINI.md → ADK 2.0 Cheatsheet Overrides](../../GEMINI.md) note about `sub_agents` composition.)
+
+The idiomatic 2.0 pattern is to expose the workflow **as a function tool** that runs it through a `Runner` — exactly the embedded-`Runner` mechanics from `webapp/app.py`, just packaged as a tool the chat model can call:
+
+```python
+import uuid
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+
+async def run_news_pipeline(topic: str) -> dict:
+    """Research the news on a topic and return a compiled NewspaperPage.
+
+    Args:
+        topic: The news topic or beat to research.
+    """
+    session_service = InMemorySessionService()
+    session_id = f"news-{uuid.uuid4()}"  # fresh session per call — no cross-talk
+    await session_service.create_session(
+        app_name="news_tool", user_id="chat", session_id=session_id
+    )
+    # Runner accepts the Workflow as its `agent` (duck-typed) — same call
+    # webapp/app.py makes. Drain the event stream, then read the result out
+    # of session state, just like the webapp does.
+    runner = Runner(
+        app_name="news_tool", agent=news_workflow, session_service=session_service
+    )
+    msg = types.Content(role="user", parts=[types.Part(text=topic)])
+    async for _ in runner.run_async(
+        user_id="chat", session_id=session_id, new_message=msg
+    ):
+        pass
+    session = await session_service.get_session(
+        app_name="news_tool", user_id="chat", session_id=session_id
+    )
+    return session.state.get("compiled_news", {})
+
+
+concierge_agent = LlmAgent(
+    name="concierge",
+    model=worker_model,
+    instruction=(
+        "You are a friendly newsroom concierge. Chat normally. When the user "
+        "asks for news on a topic, call run_news_pipeline with that topic and "
+        "summarize the headlines it returns."
+    ),
+    tools=[run_news_pipeline],  # ADK auto-wraps the plain function as a FunctionTool
+)
+```
+
+Set `root_agent = concierge_agent` and run `make adk-web` — now you have a chat agent that *decides* when to fire the whole newsroom.
+
+**Trade-offs:** this nests a `Runner` inside a tool call inside the outer `Runner`. That's the officially supported composition (a `Workflow` can also be nested directly as a node in another `Workflow`), but each invocation spins up its own in-memory session, so the inner run's events don't appear in the outer agent's trace — you only get the final `compiled_news` back. If you need the inner pipeline's events visible in one unified trace, nest the `Workflow` as a node instead of tunneling through a tool.
+
 ## References & Further Reading
 
-- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (stability status; install instructions for the Beta).
+- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (install; the graph API mental model).
 - **Workflow API** — [adk.dev/workflows](https://adk.dev/workflows/) (nodes, edges, START — the mental model).
 - **Conditional routing** — [adk.dev/workflows/graph-routes](https://adk.dev/workflows/graph-routes/) (`RoutingMap` dicts; route values).
 - **Dynamic parallelism** — [adk.dev/workflows/dynamic](https://adk.dev/workflows/dynamic/) (`ctx.run_node` + `asyncio.gather` patterns).
