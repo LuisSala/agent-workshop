@@ -76,13 +76,15 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 
 | Command | Purpose |
 |---------|---------|
+| `make setup-env` | Create `.env` from `env.sample` (idempotent; run before first launch) |
 | `make adk-web` | Interactive local testing |
+| `make catchup module=NN` | Reset `workspace/` to the start of module NN |
+| `make solve module=NN` | Load module NN's solution into `workspace/` |
 | `make test` | Run unit and integration tests |
 | `make eval` | Run evaluation against evalsets |
 | `make eval-all` | Run all evalsets |
 | `make lint` | Check code quality |
-| `make setup-dev-env` | Set up dev infrastructure (Terraform) |
-| `make deploy` | Deploy to dev |
+| `make deploy` | Deploy to dev (Agent Engine) |
 
 ---
 
@@ -105,6 +107,7 @@ You can natively test multi-agent orchestration without writing eval tests or us
 - **Model 404 errors**: Use `GEMINI_LOCATION` to set the LLM routing (e.g. `global`).
 - **ADK tool imports**: Import the tool instance, not the module: `from google.adk.tools.load_web_page import load_web_page`
 - **Run Python with `uv`**: `uv run python script.py`. Run `make install` first.
+- **Dependencies live in `pyproject.toml`, not `requirements.txt`**: This project manages all deps with `uv`. Use `uv add <pkg>` — never hand-write a root `requirements.txt`. The **only** sanctioned `requirements.txt` files are the `webapp/requirements.txt` consumed by the Cloud Run `--source` buildpack (`make deploy-webapp`) and the transient one `make deploy` exports for Agent Engine. Keep their `google-adk` pin in sync with `pyproject.toml` (currently `>=2.0.0`).
 - **Stop on repeated errors**: If the same error appears 3+ times, fix the root cause instead of retrying.
 - **Terraform conflicts** (Error 409): Use `terraform import` instead of retrying creation.
 - **Workshop Workflow (CRITICAL)**: NEVER write or edit code directly inside the `modules/` directory. ALL implementation must happen in `workspace/`.

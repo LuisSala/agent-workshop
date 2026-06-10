@@ -2,6 +2,6 @@ flask>=3.1.0
 gunicorn>=23.0.0
 google-cloud-aiplatform[agent-engines]>=1.130.0
 google-genai>=1.69.0
-google-adk>=1.28.0
+google-adk>=2.0.0
 google-auth>=2.0.0
 python-dotenv>=1.0.0

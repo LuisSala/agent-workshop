@@ -25,8 +25,13 @@ from google.genai import types
 
 import os
 
-# TODO: Add a tool that returns random temperature and weather conditions for a given city.
-# Hint: Import and use the `random` module to select random weather conditions from a list of possible conditions.
+# TODO (Module 01, Step 2): add `import random` here — get_weather() needs it
+#                           and it is NOT imported yet (see README).
+
+
+# TODO (Module 01, Step 2): paste your get_weather() function here.
+# It should return a random temperature and weather condition for a given city.
+# Then (Step 3) register it in the root_agent's tools=[...] list below.
 
 
 def get_current_server_time() -> str:
@@ -47,6 +52,7 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
+    # TODO (Module 01, Step 3): add get_weather to register it as a tool ->
     tools=[get_current_server_time],
 )
 

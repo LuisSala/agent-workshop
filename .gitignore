@@ -187,7 +187,11 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
-*.vscode*
+
+# VS Code: ignore personal workspace cruft but ship the shared workshop settings
+# (autosave + reload reliability) to every lab workstation.
+.vscode/*
+!.vscode/settings.json
 
 # Starter pack specific
 .persist_vector_store
