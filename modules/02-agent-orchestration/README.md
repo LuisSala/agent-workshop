@@ -117,6 +117,9 @@ compiler_agent = LlmAgent(
 
 The `Workflow` IS the root agent — no conversational outer LlmAgent, no `sub_agents=[…]` delegation. Just three edges that map predecessor outputs to successor inputs.
 
+> [!NOTE]
+> Want a chat agent that *calls* this pipeline on demand instead of being replaced by it? A `Workflow` isn't an `Agent`, so `sub_agents=[workflow]` won't work — you expose it as a function tool. See the [Module 04 bonus: a conversational front door](../04-vector-search/README.md#bonus-a-conversational-front-door-calling-a-workflow-from-a-chat-agent).
+
 ```python
 from google.adk.workflow import Workflow
 from google.adk.apps import App
