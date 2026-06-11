@@ -22,8 +22,14 @@ Execute `make adk-web` (or `adk web path/to/agent`) from your terminal. Try talk
 ### 2. Add a Custom Function: `get_weather()`
 Your objective is to add a function tool that returns the current weather conditions for a given city. The tool should return a random temperature (e.g. -10 to 40 degrees Celsius) and weather conditions (sunny, cloudy, raining, etc.).
 
+> [!IMPORTANT]
+> The example below uses Python's `random` module, which the starter file does **not** import yet. Add `import random` to the imports at the top of `agent.py` (next to `import datetime`) — otherwise the agent will crash with `NameError: name 'random' is not defined` the first time it calls the tool.
+
 **Implementation Example:**
 ```python
+import random  # add this to the imports at the top of agent.py
+
+
 def get_weather(city: str) -> str:
     """Simulates getting the current weather conditions for a given city.
 

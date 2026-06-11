@@ -43,8 +43,9 @@ lint = [
 ]
 
 [tool.uv]
-# ADK 2.0 is a Beta (pre-release). Allow pre-release resolution so
-# `uv sync` and `make install` Just Work without extra flags.
+# google-adk is pinned to the official 2.0.0 release. Pre-release resolution
+# stays enabled so transitive preview deps (e.g. eval extras) resolve and
+# `uv sync` / `make install` Just Work without extra flags.
 prerelease = "allow"
 
 [tool.ruff]

@@ -9,6 +9,7 @@ help:
 	@echo "==============================================================================="
 	@echo "| Agent Workshop Development Commands                                         |"
 	@echo "==============================================================================="
+	@echo "  make setup-env      - Create your .env from env.sample (run this first)"
 	@echo "  make adk-web        - Launch local dev playground (Web UI & CLI)"
 	@echo "  make run-webapp     - Launch the AI Newsroom Web UI (Module 04 demo)"
 	@echo "  make run-slides     - Launch the interactive Marimo Workshop Slideshow"
@@ -29,8 +30,24 @@ help:
 # Installation & Setup
 # ==============================================================================
 
-# Install dependencies using uv package manager
-install:
+# Create a local .env from the committed template (idempotent — never clobbers
+# an existing .env). This is the step that bit the first cohort: ADK web fails
+# with "No valid API key" until .env exists with the right Vertex AI settings.
+setup-env:
+	@if [ -f .env ]; then \
+		echo "✅ .env already exists — leaving it untouched."; \
+	else \
+		cp env.sample .env; \
+		echo "==============================================================================="; \
+		echo "| ✅ Created .env from env.sample.                                            |"; \
+		echo "|                                                                             |"; \
+		echo "| ➡  Edit .env and set PROJECT_ID to your Google Cloud project.               |"; \
+		echo "|    (GOOGLE_GENAI_USE_VERTEXAI=true and LOCATION are already set for you.)    |"; \
+		echo "==============================================================================="; \
+	fi
+
+# Install dependencies using uv package manager (also seeds .env on first run)
+install: setup-env
 	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; source $HOME/.local/bin/env; }
 	uv sync
 

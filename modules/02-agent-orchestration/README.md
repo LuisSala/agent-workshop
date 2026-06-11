@@ -15,7 +15,7 @@ In this module you'll move beyond a single agent and build a multi-agent **AI Ne
 
 A **Planner** breaks down a broad user request into specific Google Search queries. A **Researcher** runs those queries with the built-in `google_search` tool. An **Editor-in-Chief** synthesizes the findings into a final newspaper. The whole thing is wired together with the new ADK 2.0 `Workflow` graph API.
 
-> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** ADK 2.0 is in **Beta**. APIs may shift before GA — see the [ADK 2.0 overview](https://adk.dev/2.0/) for stability caveats.
+> **Heads up — this is the ADK 2.0 Workflow API version of the workshop.** It targets the official **ADK 2.0** release (`google-adk>=2.0.0`). See the [ADK 2.0 overview](https://adk.dev/2.0/) for the full graph API.
 
 ## Architecture
 
@@ -35,20 +35,17 @@ After running `make catchup module=02` your workspace contains the **mod01 solut
 
 ## Your Objectives
 
-### 1. Centralize models and helpers
+### 1. Centralize the model strings
 
-Pin model strings at the top of `workspace/app/agent.py` and add a small helper so agents always know the current date (critical for "recent news" queries).
+Pin the two model strings near the top of `workspace/app/agent.py`, just below the imports. We use a fast **worker** model for the planner/researcher and a stronger **pro** model for the final write-up.
 
 ```python
-import datetime
-
 worker_model = "gemini-3-flash-preview"
 pro_model = "gemini-3.1-pro-preview"
-
-def get_current_server_time() -> str:
-    now = datetime.datetime.now().astimezone()
-    return f"The current server time is {now.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}"
 ```
+
+> [!NOTE]
+> `import datetime` and the `get_current_server_time()` helper are **already in your starter file** (it's the Module 01 solution). Keep them — the planner uses the current date to focus on recent news. Don't paste them again.
 
 ### 2. Build the Planner with a structured output schema
 
@@ -141,14 +138,14 @@ app = App(root_agent=root_agent, name="app")
 ## Try it
 
 ```bash
-make adk-web       # ADK Web on :8501 — pick the `app` folder when prompted
+make adk-web       # ADK Web on :8500 — pick the `app` folder when prompted
 ```
 
 ADK Web's run pane shows the planner's `SearchPlan`, the researcher's tool calls, and the compiler's final newspaper text. Exercise the pipeline with prompts like *"Latest news on AI agents from the past three days."*
 
 ## References & Further Reading
 
-- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (Beta status, install, stability caveats).
+- **ADK 2.0 overview** — [adk.dev/2.0](https://adk.dev/2.0/) (install, the graph API mental model).
 - **Workflow API** — [adk.dev/workflows](https://adk.dev/workflows/) (nodes, edges, START — the mental model).
 - **Data flow between nodes** — [adk.dev/workflows/data-handling](https://adk.dev/workflows/data-handling/) (how `node_input` is populated; structured output passing).
 - **Google Search Grounding** — [docs.cloud.google.com/vertex-ai/.../grounding-with-google-search](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search) (display requirements; relevant once you produce structured citations in Module 03).

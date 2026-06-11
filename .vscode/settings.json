@@ -1,0 +1,23 @@
+{
+  // Autosave so ADK Web's `--reload_agents` actually sees your edits.
+  // The first cohort kept "losing" changes because files were never saved;
+  // afterDelay flushes a save shortly after you stop typing.
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+
+  // Keep Python tidy for the workshop's small agent files.
+  "editor.formatOnSave": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // Don't surface build/cache noise in the Explorer or search.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.adk": true,
+    "**/*.pyc": true
+  },
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  }
+}
