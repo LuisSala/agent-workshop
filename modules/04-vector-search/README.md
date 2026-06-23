@@ -53,7 +53,7 @@ from google.adk.workflow import node
 
 researcher_agent = LlmAgent(
     name="researcher",
-    model=worker_model,
+    model=model,
     instruction="...You are an investigative journalist...",
     tools=[google_search],
     output_schema=Article,
@@ -116,7 +116,7 @@ A single `LlmAgent` equipped with the Vector Search tool and forced into the `Ne
 ```python
 archive_reader_agent = LlmAgent(
     name="archive_reader_agent",
-    model=pro_model,  # pro model for better schema adherence
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -353,7 +353,7 @@ async def run_news_pipeline(topic: str) -> dict:
 
 concierge_agent = LlmAgent(
     name="concierge",
-    model=worker_model,
+    model=model,
     instruction=(
         "You are a friendly newsroom concierge. Chat normally. When the user "
         "asks for news on a topic, call run_news_pipeline with that topic and "

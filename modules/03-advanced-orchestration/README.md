@@ -83,7 +83,7 @@ from google.adk.tools import google_search
 
 planner_agent = LlmAgent(
     name="planner_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -105,7 +105,7 @@ One `LlmAgent` definition. The orchestrator below spawns N parallel sub-runs of 
 ```python
 researcher_agent = LlmAgent(
     name="researcher",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -165,7 +165,7 @@ The compiler aggregates drafts into a final `NewspaperPage`. **The `output_key="
 ```python
 compiler_agent = LlmAgent(
     name="compiler_agent",
-    model=pro_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 

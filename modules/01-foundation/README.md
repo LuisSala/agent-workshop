@@ -50,7 +50,7 @@ Once your function is written, you must explicitly bind it to your ADK `Agent` i
 ```python
 root_agent = Agent(
     name="root_agent",
-    model=Gemini(model="gemini-3-flash-preview"),
+    model=Gemini(model="gemini-3.5-flash"),
     instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
     tools=[get_current_server_time, get_weather], # <-- Add the tool here!
 )
