@@ -14,9 +14,9 @@ async def run_harvester(do_harvest: bool, do_ingest: bool):
 
     if do_harvest:
         try:
-            from workspace.app.agent import news_pipeline, NewspaperPage
+            from workspace.app.agent import news_workflow, NewspaperPage
         except ImportError as e:
-            print(f"Error importing news_pipeline: {e}")
+            print(f"Error importing news_workflow: {e}")
             return
             
         topics_to_harvest = [f"Tech Trend #{i} in emerging markets" for i in range(1, 101)]
@@ -45,7 +45,7 @@ async def run_harvester(do_harvest: bool, do_ingest: bool):
                         from google.genai import types
 
                         session_svc = InMemorySessionService()
-                        runner = Runner(agent=news_pipeline, app_name="harvest", session_service=session_svc)
+                        runner = Runner(agent=news_workflow, app_name="harvest", session_service=session_svc)
                         
                         session_id = f"harvest-{hash(topic)}"
                         await session_svc.create_session(app_name="harvest", user_id="harvester", session_id=session_id)
