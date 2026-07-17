@@ -45,7 +45,7 @@ async def introspective_callback(callback_context: CallbackContext) -> None:
 
 research_agent = Agent(
     name="research_bot",
-    model="gemini-3-flash-preview",
+    model="gemini-3.5-flash",
     instruction="Research the query using google_search. Do not include URLs or citations in your text output.",
     tools=[google_search],
     output_key="research_output",

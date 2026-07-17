@@ -23,7 +23,7 @@ A **Planner** breaks down a broad user request into specific Google Search queri
 flowchart LR
     START([START]) --> P[planner_agent<br/>LlmAgent · output_schema=SearchPlan]
     P -->|SearchPlan dict| R[research_agent<br/>LlmAgent · tools=google_search]
-    R -->|raw research text| C[compiler_agent<br/>LlmAgent · pro model]
+    R -->|raw research text| C[compiler_agent<br/>LlmAgent · text output]
     C --> END([Final newspaper])
 ```
 
@@ -35,13 +35,12 @@ After running `make catchup module=02` your workspace contains the **mod01 solut
 
 ## Your Objectives
 
-### 1. Centralize the model strings
+### 1. Centralize the model string
 
-Pin the two model strings near the top of `workspace/app/agent.py`, just below the imports. We use a fast **worker** model for the planner/researcher and a stronger **pro** model for the final write-up.
+Pin the model string near the top of `workspace/app/agent.py`, just below the imports. Every agent in the pipeline uses the same fast model, `gemini-3.5-flash`. (Defining it once makes it trivial to swap later — and in production you might give a heavier-weight agent like the editor a stronger model.)
 
 ```python
-worker_model = "gemini-3-flash-preview"
-pro_model = "gemini-3.1-pro-preview"
+model = "gemini-3.5-flash"
 ```
 
 > [!NOTE]
@@ -62,7 +61,7 @@ class SearchPlan(BaseModel):
 
 planner_agent = LlmAgent(
     name="planner_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -84,7 +83,7 @@ from google.adk.tools import google_search
 
 research_agent = LlmAgent(
     name="research_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -98,12 +97,12 @@ research_agent = LlmAgent(
 
 ### 4. Build the Compiler
 
-Final agent in the chain. Uses the `pro_model` for writing quality, no `output_schema` (just emits text — Module 03 introduces structured `NewspaperPage` output).
+Final agent in the chain. No `output_schema` — it just emits text (Module 03 introduces structured `NewspaperPage` output).
 
 ```python
 compiler_agent = LlmAgent(
     name="compiler_agent",
-    model=pro_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 

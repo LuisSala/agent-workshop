@@ -75,8 +75,7 @@ try:
 except Exception as e:
     print(f"Warning: Could not configure Vertex AI Auth natively: {e}")
 
-worker_model = "gemini-3-flash-preview"
-pro_model = "gemini-3.1-pro-preview"
+model = "gemini-3.5-flash"
 
 
 # ----------------------------------------------------------------------------
@@ -142,7 +141,7 @@ def search_news_archive(query: str, top_k: int = 5) -> list[dict]:
 
 planner_agent = LlmAgent(
     name="planner_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -161,7 +160,7 @@ planner_agent = LlmAgent(
 # parallel sub-runs of this same agent — one per topic — via ctx.run_node.
 researcher_agent = LlmAgent(
     name="researcher",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -221,7 +220,7 @@ async def research_orchestrator(ctx: Context, node_input: dict) -> list:
 
 compiler_agent = LlmAgent(
     name="compiler_agent",
-    model=pro_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -254,7 +253,7 @@ compiler_agent = LlmAgent(
 
 archive_reader_agent = LlmAgent(
     name="archive_reader_agent",
-    model=pro_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 

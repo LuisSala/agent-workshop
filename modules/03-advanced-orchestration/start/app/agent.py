@@ -48,8 +48,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv(find_dotenv())
 
-worker_model = "gemini-3-flash-preview"
-pro_model = "gemini-3.1-pro-preview"
+model = "gemini-3.5-flash"
 
 
 # --- Structured Pydantic Schemas ---
@@ -76,7 +75,7 @@ def get_current_server_time() -> str:
 
 planner_agent = LlmAgent(
     name="planner_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -90,7 +89,7 @@ planner_agent = LlmAgent(
 
 research_agent = LlmAgent(
     name="research_agent",
-    model=worker_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 
@@ -103,7 +102,7 @@ research_agent = LlmAgent(
 
 compiler_agent = LlmAgent(
     name="compiler_agent",
-    model=pro_model,
+    model=model,
     instruction=f"""
     The current date and time is: {get_current_server_time()}
 

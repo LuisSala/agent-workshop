@@ -102,7 +102,7 @@ You can natively test multi-agent orchestration without writing eval tests or us
 ## Operational Guidelines for Coding Agents
 
 - **Code preservation**: Only modify code directly targeted by the user's request. Preserve all surrounding code, config values (e.g., `model`), comments, and formatting.
-- **NEVER change the model** unless explicitly asked. Use `gemini-3-flash-preview` or `gemini-3-pro-preview` for new agents.
+- **NEVER change the model** unless explicitly asked. Use `gemini-3.5-flash` for new agents (the workshop's standard model across all agents).
 - **Environment config**: Always use the single root `/.env` file. Never use `workspace/.env`. Use `load_dotenv(find_dotenv())` to cleanly traverse upwards during imports.
 - **Model 404 errors**: Use `GEMINI_LOCATION` to set the LLM routing (e.g. `global`).
 - **ADK tool imports**: Import the tool instance, not the module: `from google.adk.tools.load_web_page import load_web_page`
