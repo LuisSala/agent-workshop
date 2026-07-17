@@ -19,7 +19,7 @@ async def run_harvester(do_harvest: bool, do_ingest: bool):
             print(f"Error importing news_workflow: {e}")
             return
             
-        topics_to_harvest = [f"Tech Trend #{i} in emerging markets" for i in range(1, 101)]
+        topics_to_harvest = [f"Tech Trend #{i} in emerging markets" for i in range(1, 4)]
         
         processed_topics = set()
         if os.path.exists(processed_file):
@@ -54,7 +54,7 @@ async def run_harvester(do_harvest: bool, do_ingest: bool):
                         async for event in runner.run_async(new_message=msg, user_id="harvester", session_id=session_id):
                             pass
                         
-                        session_data = await session_svc.get_session("harvest", "harvester", session_id)
+                        session_data = await session_svc.get_session(app_name="harvest", user_id="harvester", session_id=session_id)
                         compiled_news = session_data.state.get("compiled_news")
 
                         if compiled_news and hasattr(compiled_news, "articles"):

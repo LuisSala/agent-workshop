@@ -159,7 +159,7 @@ def insert_article(topic: str, article: dict):
         if isinstance(article, dict)
         else f"{topic}_{getattr(article, 'title', '')}"
     )
-    safe_id = hashlib.sha256(raw_id.encode("utf-8")).hexdigest()
+    safe_id = hashlib.sha256(raw_id.encode("utf-8")).hexdigest()[:63]
 
     citations_data = []
     if hasattr(article, "citations"):
