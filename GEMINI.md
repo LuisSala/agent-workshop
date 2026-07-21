@@ -148,6 +148,33 @@ Quick checklist for module README edits:
 - When promoting a draft module past placeholder content, remove
   `status: draft` from frontmatter.
 
+**Heading levels are load-bearing** (this is the easiest thing to get
+wrong):
+
+- `## H2` = a major section. These — and only these — populate the
+  website's right-rail table of contents and the in-sidebar sub-list.
+  Every module's prose must live under an H2; content placed at a bare
+  `### H3` with no enclosing H2 is invisible in the site TOC.
+- `### N. <Title>` = a numbered objective, nested under an H2 (see
+  module 01's `## Building Your First Agent` → `### 1. …`, `### 2. …`).
+  The count of these is what `lessons:` must equal.
+- `#### H4` and below don't render distinctly — avoid them for structure.
+
+**Module 00 (the Introduction) — special cases the sync handles:**
+
+- It's the only module with `order: 0`. It's a first-class synced module,
+  not the website home page (that's a separate hand-authored landing
+  page which links to it).
+- A `## Curriculum Overview` list of modules 01–07 is welcome for GitHub
+  readers, but the sync **strips it** — on the site it would duplicate the
+  auto-generated module grid and sidebar. Keep it in source if you like;
+  don't expect it on the site. (No other module uses that heading, so the
+  strip only ever touches Module 00.)
+
+The authoritative, exhaustive version of all of the above lives in the
+website repo's `docs/CONTENT_SYNC_CONTRACT.md`. When these two disagree,
+that contract wins — update it and this section together.
+
 ---
 
 ## ADK 2.0 Cheatsheet Overrides
