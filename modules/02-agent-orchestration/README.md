@@ -40,7 +40,7 @@ After running `make catchup module=02` your workspace contains the **mod01 solut
 Pin the two model strings near the top of `workspace/app/agent.py`, just below the imports. We use a fast **worker** model for the planner/researcher and a stronger **pro** model for the final write-up.
 
 ```python
-worker_model = "gemini-3-flash-preview"
+worker_model = "gemini-3.7-flash"
 pro_model = "gemini-3.1-pro-preview"
 ```
 

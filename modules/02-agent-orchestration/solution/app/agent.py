@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv(find_dotenv())
 
-worker_model = "gemini-3-flash-preview"
+worker_model = "gemini-3.7-flash"
 pro_model = "gemini-3.1-pro-preview"
 
 

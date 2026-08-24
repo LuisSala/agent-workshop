@@ -48,7 +48,7 @@ def get_current_server_time() -> str:
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model="gemini-3-flash-preview",
+        model="gemini-3.7-flash",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="You are a helpful AI assistant designed to provide accurate and useful information.",

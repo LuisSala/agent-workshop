@@ -14,7 +14,7 @@ In this module, we will explore the fundamentals of the Google Agent Development
 
 ## Building Your First Agent
 
-The baseline `agent.py` contains a straightforward root agent configuration. 
+The baseline `agent.py` contains a straightforward root agent configuration.
 
 ### 1. Run the ADK Web UI
 Execute `make adk-web` (or `adk web path/to/agent`) from your terminal. Try talking to your agent and see what it can do before you begin making modifications!
@@ -50,7 +50,7 @@ Once your function is written, you must explicitly bind it to your ADK `Agent` i
 ```python
 root_agent = Agent(
     name="root_agent",
-    model=Gemini(model="gemini-3-flash-preview"),
+    model=Gemini(model="gemini-3.7-flash"),
     instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
     tools=[get_current_server_time, get_weather], # <-- Add the tool here!
 )

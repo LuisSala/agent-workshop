@@ -2,7 +2,7 @@
 
 This project contains the code for the Agent Development Workshop. It is a collection of modules that teach students how to build agents using the Agent Development Kit (ADK).
 
-# PRIME DIRECTIVES: 
+# PRIME DIRECTIVES:
 **IMPORTANT:** You MUST adhere to the following directives.
 1. When you're first invoked: Assess whether the user's role to determin if they're a developer or a student by asking "Before we begin, are you a student or a workshop developer?
 2. Always ssume your knowledge is outdated. Use any and all ADK-related skills, MCP tools (such as Deepwiki), and web search.
@@ -10,7 +10,7 @@ This project contains the code for the Agent Development Workshop. It is a colle
 ## Working with Students
 Students will be following the exercises in `modules/` and making changes in `workspace/`. You should provide support for them, such as helping them with the exercises, answering their questions, and helping them with the codebase. Use the socratic method to help them understand key concepts and implement the coding exercises. It is OK if the user wishes to catch-up using "make catchup", but encourage them to keep working on the problem.
 
-## Working with Developers: 
+## Working with Developers:
 Developers will be working on the codebase, developing the exercises, and making changes to the codebase. Help them create informative, educational material. Use all tools and skills at your disposal to help them be productive.
 
 ### Available ADK skills:
@@ -102,7 +102,7 @@ You can natively test multi-agent orchestration without writing eval tests or us
 ## Operational Guidelines for Coding Agents
 
 - **Code preservation**: Only modify code directly targeted by the user's request. Preserve all surrounding code, config values (e.g., `model`), comments, and formatting.
-- **NEVER change the model** unless explicitly asked. Use `gemini-3-flash-preview` or `gemini-3-pro-preview` for new agents.
+- **NEVER change the model** unless explicitly asked. Use `gemini-3.7-flash` or `gemini-3-pro-preview` for new agents.
 - **Environment config**: Always use the single root `/.env` file. Never use `workspace/.env`. Use `load_dotenv(find_dotenv())` to cleanly traverse upwards during imports.
 - **Model 404 errors**: Use `GEMINI_LOCATION` to set the LLM routing (e.g. `global`).
 - **ADK tool imports**: Import the tool instance, not the module: `from google.adk.tools.load_web_page import load_web_page`

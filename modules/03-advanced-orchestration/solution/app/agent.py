@@ -67,7 +67,7 @@ try:
 except Exception as e:
     print(f"Warning: Could not configure Vertex AI Auth natively: {e}")
 
-worker_model = "gemini-3-flash-preview"
+worker_model = "gemini-3.7-flash"
 pro_model = "gemini-3.1-pro-preview"
 
 
