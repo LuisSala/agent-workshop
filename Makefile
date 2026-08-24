@@ -2,6 +2,22 @@
 .DEFAULT_GOAL := help
 
 # ==============================================================================
+# Environment & Host Detection
+# ==============================================================================
+
+# Detect if running inside GKE-hosted workshop pod or local/docker environment
+ifdef DOMAIN_NAME
+  ADK_WEB_URL ?= https://$(DOMAIN_NAME):8500
+  WEBAPP_URL  ?= https://$(DOMAIN_NAME):8510
+else ifdef KUBERNETES_SERVICE_HOST
+  ADK_WEB_URL ?= https://labs.agentworkshop.dev:8500
+  WEBAPP_URL  ?= https://labs.agentworkshop.dev:8510
+else
+  ADK_WEB_URL ?= http://localhost:8500
+  WEBAPP_URL  ?= http://localhost:8510
+endif
+
+# ==============================================================================
 # Help
 # ==============================================================================
 
@@ -79,6 +95,12 @@ adk-web:
 	@echo "==============================================================================="
 	@echo "| 🚀 Starting your agent playground...                                        |"
 	@echo "|                                                                             |"
+	@echo "| 🌐 Open your browser to:                                                    |"
+	@echo "|    👉  $(ADK_WEB_URL)"
+	@echo "|                                                                             |"
+	@echo "| ⚠️  NOTE: Always use the URL above. Ignore any 127.0.0.1 / 0.0.0.0 URLs     |"
+	@echo "|    printed by internal server logs below.                                   |"
+	@echo "|                                                                             |"
 	@echo "| 💡 Try asking: What's the weather in San Francisco?                         |"
 	@echo "|                                                                             |"
 	@echo "| 🔍 IMPORTANT: Select the 'app' folder to interact with your agent.          |"
@@ -104,6 +126,11 @@ run-webapp:
 	@echo "| 📰 Starting your AI Newsroom Web UI...                                      |"
 	@echo "|                                                                             |"
 	@echo "| 🌐 Open your browser to http://127.0.0.1:8510                               |"
+	@echo "| 🌐 Open your browser to:                                                    |"
+	@echo "|    👉  $(WEBAPP_URL)"
+	@echo "|                                                                             |"
+	@echo "| ⚠️  NOTE: Always use the URL above. Ignore any 127.0.0.1 / 0.0.0.0 URLs     |"
+	@echo "|    printed by internal server logs below.                                   |"
 	@echo "==============================================================================="
 	uv run --no-sync python webapp/app.py
 
