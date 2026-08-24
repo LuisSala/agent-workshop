@@ -125,7 +125,6 @@ run-webapp:
 	@echo "==============================================================================="
 	@echo "| 📰 Starting your AI Newsroom Web UI...                                      |"
 	@echo "|                                                                             |"
-	@echo "| 🌐 Open your browser to http://127.0.0.1:8510                               |"
 	@echo "| 🌐 Open your browser to:                                                    |"
 	@echo "|    👉  $(WEBAPP_URL)"
 	@echo "|                                                                             |"
