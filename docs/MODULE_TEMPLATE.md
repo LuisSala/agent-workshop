@@ -2,6 +2,17 @@
 
 [Brief introductory paragraph explaining the core concepts covered in this module.]
 
+## Before You Begin
+
+Ensure your workspace is synchronized with the starting state for this module:
+
+```bash
+make catchup module=[MODULE_NUMBER]
+```
+
+> [!NOTE]
+> This command safely resets your `workspace/` to the known good starting point for Module [MODULE_NUMBER].
+
 ## Your Objectives
 
 ### 1. [First Objective Title]

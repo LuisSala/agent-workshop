@@ -43,6 +43,17 @@ The helper that walks the event slice lives in [`utils/citations.py`](../../util
 
 > ⚠️ **Parallel attribution caveat (intentional teaching surface)**: every parallel `ctx.run_node` call shares one `session.events` stream, and Python `asyncio` runs each coroutine up to its first `await` synchronously, so all `research_one` tasks capture the same `start` index. As tasks complete, each captures `end` at its own moment but the slice `[start:end]` picks up grounding chunks emitted by *peers* that happened to finish earlier. The resulting per-article citation list is a *superset* of that researcher's real grounding chunks. Real-world async agent systems trade attribution precision for throughput; this is a clean, observable example. See `utils/citations.py` for the long-form discussion plus the cleaner ("verified URL pool") alternative.
 
+## Before You Begin
+
+Ensure your workspace is synchronized with the starting state for this module:
+
+```bash
+make catchup module=03
+```
+
+> [!NOTE]
+> This command safely resets your `workspace/` to the known good starting point for Module 03 (the completed Module 02 linear pipeline).
+
 ## Your Objectives
 
 ### 1. Define your Pydantic schemas
@@ -225,6 +236,41 @@ You can also drive the agent from the CLI:
 ```bash
 uv run adk run workspace/app
 ```
+
+## How Do I Know It Worked?
+
+In **ADK Web**, inspect the session state in the right-hand panel or check the final event payload. Because the `compiler_agent` is configured with `output_key="compiled_news"`, upon successful completion the session state will contain a structured `compiled_news` object:
+
+```yaml
+compiled_news:
+  articles:
+    - title: "The Gravity Shift: Google Erases the 'AI Tax' by Bundling Antigravity into Gemini Enterprise"
+      teaser: "In a decisive blow to the fragmented AI tools market, Google has absorbed its 'Antigravity' agentic platform into core Gemini Enterprise subscriptions. By eliminating per-user licensing fees and centralizing deployment through the Workspace Admin Console, the tech giant is transforming high-end autonomous AI from a luxury add-on into a standard utility for the modern workforce."
+      content: |
+        ### The End of the AI Add-On Era
+
+        On August 21, 2026, Google executed a strategic pivot that has sent shockwaves through the enterprise software landscape. The company announced that **Antigravity**, its flagship autonomous agent platform, is now bundled into Gemini Enterprise Standard and Plus subscriptions at no additional cost...
+
+        ### What is Antigravity?
+
+        Unlike traditional AI assistants that focus on chat-based code completion, Antigravity represents the next generation of **agentic systems**...
+      citations:
+        - title: "bito.ai"
+          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHhp9HOFjoJGPpbxEWimCU9F4F4zDUF_LSbOamm-pTmiwoXeTZABl-jdE4hZD6XPBshp3puwmB_BNITD4cP6HHDCaDqfFz9SxqgBrHcM4vW5fC-gjcyM4MI0X6S_xP4YppM0JMHnU1yaf8F"
+        - title: "zencoder.ai"
+          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGhmzskjSsAcHVoF6tNoprYvv4MGF3ksWsw8pOd-gDLgTeXei8K1iMpsQGIja8CYHITapLpNxMQ-s36bPAkrWD6URmMX0S8bhMNZojddcX_c-lnrp0OQDGlkCfeDupL9WreEtywGQ=="
+        - title: "mindstudio.ai"
+          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGE9PgvWAiTA-OyMgpaiMjlTh2npjNmvFlG5NTR2UX8AF2_LzWD7dl11x6tcXx6YmiMEmPd0eu9uWrgxf9I41ZUtmaUy_Ur7wT0q-ouytcGNH6GQiXP29BZwoNLRgfmDhC-ETEACrIJQOrIsTOgCfo01QRUCwz1Z-JME8KPZZudMok0fg=="
+        - title: "example.com"
+          url: "https://vertexaisearch.cloud.google.com/..."
+      search_entry_point_html: "<div class=\"google-search-entry-point\">...</div>"
+```
+
+> [!NOTE]
+> Key indicators of a successful run:
+> 1. **Structured Article Schema**: The output contains an `articles` list with `title`, `teaser`, `content`, and `citations`.
+> 2. **Real Grounded URLs**: The `citations` array contains deterministic Google Search Grounding redirect URLs (`https://vertexaisearch.cloud.google.com/grounding-api-redirect/...`), proving that citations were extracted from Vertex AI Search metadata rather than hallucinated.
+> 3. **Search Entry Point HTML**: The `search_entry_point_html` is populated with the Google Search Suggestion chip required for TOS compliance.
 
 ## References & Further Reading
 

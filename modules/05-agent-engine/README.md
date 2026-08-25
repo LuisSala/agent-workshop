@@ -17,6 +17,19 @@ You will learn how the `AdkApp` deployment wrapper bridges your local ADK `app` 
 
 ---
 
+## Before You Begin
+
+Ensure your workspace is synchronized with the starting state for this module:
+
+```bash
+make catchup module=05
+```
+
+> [!NOTE]
+> This command safely resets your `workspace/` to the known good starting point for Module 05 (the completed Module 04 dual-workflow newsroom).
+
+---
+
 ## Your Objectives
 
 ### 1. Understand the `AdkApp` Deployment Wrapper

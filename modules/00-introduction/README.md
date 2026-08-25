@@ -28,6 +28,19 @@ In this workshop, you will progress from a simple single-agent setup to a fully-
 
 ---
 
+## Before You Begin
+
+Ensure your workspace is synchronized with the starting state for this module:
+
+```bash
+make catchup module=00
+```
+
+> [!NOTE]
+> This command safely resets your `workspace/` to the known good starting point for Module 00.
+
+---
+
 ### 1. Welcome to the Workshop
 
 Developing software with LLMs is transitioning from simple prompt engineering to engineering **autonomous systems**. When we build applications where the AI makes decisions, calls tools, and coordinates with other AI systems, we need reliable framework patterns, local debugging tools, and robust evaluation loops.

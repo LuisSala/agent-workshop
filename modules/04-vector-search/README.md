@@ -40,6 +40,17 @@ Two **independent** workflows. The webapp's `/stream` route reads a `?mode=` que
 
 > **Why split rather than route inside one workflow?** The user's intent is already known at the UI layer (which button was clicked). Asking the agent to re-derive it via keyword matching was brittle: *"show me past articles"* vs *"show me articles about the past"* — a rule-based router can't tell them apart. App-level routing keeps each workflow single-purpose and independently testable. (If you want IN-AGENT routing instead, see ["Alternative: agent-level routing"](#alternative-agent-level-routing) below.)
 
+## Before You Begin
+
+Ensure your workspace is synchronized with the starting state for this module:
+
+```bash
+make catchup module=04
+```
+
+> [!NOTE]
+> This command safely resets your `workspace/` to the known good starting point for Module 04 (the completed Module 03 grounded research pipeline).
+
 ## Your Objectives
 
 ### 1. Migrate the news pipeline to dynamic parallel research
