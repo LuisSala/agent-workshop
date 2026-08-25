@@ -255,12 +255,6 @@ compiled_news:
 
         Unlike traditional AI assistants that focus on chat-based code completion, Antigravity represents the next generation of **agentic systems**...
       citations:
-        - title: "bito.ai"
-          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHhp9HOFjoJGPpbxEWimCU9F4F4zDUF_LSbOamm-pTmiwoXeTZABl-jdE4hZD6XPBshp3puwmB_BNITD4cP6HHDCaDqfFz9SxqgBrHcM4vW5fC-gjcyM4MI0X6S_xP4YppM0JMHnU1yaf8F"
-        - title: "zencoder.ai"
-          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGhmzskjSsAcHVoF6tNoprYvv4MGF3ksWsw8pOd-gDLgTeXei8K1iMpsQGIja8CYHITapLpNxMQ-s36bPAkrWD6URmMX0S8bhMNZojddcX_c-lnrp0OQDGlkCfeDupL9WreEtywGQ=="
-        - title: "mindstudio.ai"
-          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGE9PgvWAiTA-OyMgpaiMjlTh2npjNmvFlG5NTR2UX8AF2_LzWD7dl11x6tcXx6YmiMEmPd0eu9uWrgxf9I41ZUtmaUy_Ur7wT0q-ouytcGNH6GQiXP29BZwoNLRgfmDhC-ETEACrIJQOrIsTOgCfo01QRUCwz1Z-JME8KPZZudMok0fg=="
         - title: "example.com"
           url: "https://vertexaisearch.cloud.google.com/..."
       search_entry_point_html: "<div class=\"google-search-entry-point\">...</div>"
